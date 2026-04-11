@@ -65,6 +65,7 @@ type RiskUser = {
 type SessionRow = {
   user: string
   mode: string
+  startTime: string
   duration: string
   events: string
   sync: '동기화 완료' | '재시도 필요'
@@ -219,6 +220,7 @@ const sessionRows: SessionRow[] = [
   {
     user: '김민수',
     mode: '운전',
+    startTime: '20:49',
     duration: '1h 42m',
     events: 'L1 3회 / L2 1회',
     sync: '동기화 완료',
@@ -226,6 +228,7 @@ const sessionRows: SessionRow[] = [
   {
     user: '최은재',
     mode: '스터디',
+    startTime: '21:40',
     duration: '52m',
     events: 'L1 1회',
     sync: '동기화 완료',
@@ -233,6 +236,7 @@ const sessionRows: SessionRow[] = [
   {
     user: '이소율',
     mode: '운전',
+    startTime: '20:02',
     duration: '2h 08m',
     events: 'L1 2회 / L2 2회',
     sync: '재시도 필요',
@@ -240,8 +244,17 @@ const sessionRows: SessionRow[] = [
   {
     user: '정하준',
     mode: '업무',
+    startTime: '21:21',
     duration: '37m',
     events: 'L1 1회',
+    sync: '동기화 완료',
+  },
+  {
+    user: '김도현',
+    mode: '운전',
+    startTime: '18:15',
+    duration: '4h 10m',
+    events: 'L1 2회',
     sync: '동기화 완료',
   },
 ]
@@ -342,6 +355,7 @@ function App() {
     heartbeat: true,
     nightMode: false,
   })
+  const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
 
   useEffect(() => {
     window.localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(layouts))
@@ -707,7 +721,7 @@ function App() {
                           <span className={`sync-badge is-good`}>활성</span>
                         </td>
                         <td>
-                          <button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button>
+                          <button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail(user.name)}>상세 정보</button>
                         </td>
                       </tr>
                     ))}
@@ -724,7 +738,7 @@ function App() {
                         </div>
                       </td>
                       <td><span className={`sync-badge`}>오프라인</span></td>
-                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button></td>
+                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail('최은재')}>상세 정보</button></td>
                     </tr>
                     <tr>
                       <td><strong>김도현</strong></td>
@@ -739,7 +753,7 @@ function App() {
                         </div>
                       </td>
                       <td><span className={`sync-badge`}>오프라인</span></td>
-                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button></td>
+                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail('김도현')}>상세 정보</button></td>
                     </tr>
                   </tbody>
                 </table>
@@ -931,6 +945,7 @@ function App() {
           </>
         )}
       </main>
+      {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} onClose={() => setSelectedUserForDetail(null)} />}
     </div>
   )
 }
@@ -1242,6 +1257,108 @@ function PolicyCenterWidget({
         <button type="button" className="policy-footer__button" onClick={() => alert('정책이 성공적으로 저장되었습니다.')}>
           정책 저장
         </button>
+      </div>
+    </div>
+  )
+}
+
+function UserDetailModal({ userName, onClose }: { userName: string, onClose: () => void }) {
+  const userRisk = riskUsers.find(u => u.name === userName) || { name: userName, team: '미상', riskScore: 0, sessionsToday: 0 }
+  const userAlerts = alertItems.filter(a => a.user === userName)
+  const userSessions = sessionRows.filter(s => s.user === userName)
+
+  return (
+    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}>
+      <div className="modal-content" style={{ background: 'var(--color-bg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+        <header style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-surface)' }}>
+          <div>
+            <p className="eyebrow" style={{ margin: 0 }}>구성원 상세</p>
+            <h2 style={{ margin: '4px 0 0 0', fontSize: '1.25rem' }}>{userName} <span style={{ fontSize: '0.9rem', color: 'var(--color-muted)', fontWeight: 'normal', marginLeft: '8px' }}>{userRisk.team}</span></h2>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button>
+        </header>
+
+        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          
+          <section>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldAlert size={18} />
+              졸음 이벤트 로그 ({userAlerts.length}건)
+            </h3>
+            {userAlerts.length > 0 ? (
+              <div className="table-shell">
+                <table style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>발생 시간</th>
+                      <th>경고 단계</th>
+                      <th>상세 내용</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userAlerts.map((alert, i) => (
+                      <tr key={i}>
+                        <td>{alert.time}</td>
+                        <td>
+                          <span className={`feed-row__level feed-row__level--${alert.level}`}>
+                            {alert.level}
+                          </span>
+                        </td>
+                        <td>{alert.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ padding: '24px', textAlign: 'center', background: 'var(--color-surface)', borderRadius: '8px', color: 'var(--color-muted)' }}>
+                발생한 졸음 이벤트가 없습니다.
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock3 size={18} />
+              세션 (서버 접속) 로그 ({userSessions.length}건)
+            </h3>
+            {userSessions.length > 0 ? (
+              <div className="table-shell">
+                <table style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>시작 시간</th>
+                      <th>모드</th>
+                      <th>러닝 타임</th>
+                      <th>이벤트 요약</th>
+                      <th>동기화 상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userSessions.map((session, i) => (
+                      <tr key={i}>
+                        <td>{session.startTime}</td>
+                        <td>{session.mode}</td>
+                        <td>{session.duration}</td>
+                        <td>{session.events || '-'}</td>
+                        <td>
+                          <span className={`sync-badge${session.sync === '동기화 완료' ? ' is-good' : ' is-bad'}`}>
+                            {session.sync}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ padding: '24px', textAlign: 'center', background: 'var(--color-surface)', borderRadius: '8px', color: 'var(--color-muted)' }}>
+                기록된 세션이 없습니다.
+              </div>
+            )}
+          </section>
+
+        </div>
       </div>
     </div>
   )
