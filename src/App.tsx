@@ -45,7 +45,6 @@ type NavigationItem = {
   id: string
   label: string
   icon: typeof LayoutDashboard
-  active?: boolean
 }
 
 type AlertItem = {
@@ -79,7 +78,7 @@ type WidgetMeta = {
 }
 
 const navigationItems: NavigationItem[] = [
-  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard, active: true },
+  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
   { id: 'members', label: '구성원', icon: Users },
   { id: 'alerts', label: '이벤트', icon: BellRing },
   { id: 'policies', label: '정책', icon: ShieldCheck },
@@ -328,6 +327,7 @@ function readStoredVisibleWidgets(): WidgetId[] {
 }
 
 function App() {
+  const [activeTab, setActiveTab] = useState('dashboard')
   const [editMode, setEditMode] = useState(false)
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(readStoredLayouts)
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(
@@ -470,11 +470,12 @@ function App() {
         </div>
 
         <nav className="sidebar__nav" aria-label="관리자 메뉴">
-          {navigationItems.map(({ id, label, icon: Icon, active }) => (
+          {navigationItems.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
-              className={`sidebar__nav-item${active ? ' is-active' : ''}`}
+              className={`sidebar__nav-item${activeTab === id ? ' is-active' : ''}`}
+              onClick={() => setActiveTab(id)}
             >
               <Icon size={18} />
               <span>{label}</span>
@@ -504,133 +505,260 @@ function App() {
       </aside>
 
       <main className="workspace">
-        <header className="topbar">
-          <div className="topbar__copy">
-            <p className="eyebrow">Block-Based Dashboard</p>
-            <h1>조직 관리자 대시보드 프론트 스타터</h1>
-            <p className="topbar__description">
-              수정 가능한 위젯 보드, 정책 제어, 세션 로그, 위험 사용자 큐를 한
-              화면에서 다루는 형태로 구성했습니다.
-            </p>
-          </div>
+        {activeTab === 'dashboard' && (
+          <>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <p className="eyebrow">Block-Based Dashboard</p>
+                <h1>조직 관리자 대시보드 프론트 스타터</h1>
+                <p className="topbar__description">
+                  수정 가능한 위젯 보드, 정책 제어, 세션 로그, 위험 사용자 큐를 한
+                  화면에서 다루는 형태로 구성했습니다.
+                </p>
+              </div>
 
-          <div className="topbar__controls">
-            <label className="select-field">
-              <Building2 size={16} />
-              <select
-                aria-label="조직 선택"
-                value={selectedOrganization}
-                onChange={(event) => setSelectedOrganization(event.target.value)}
-              >
-                {organizations.map((organization) => (
-                  <option key={organization} value={organization}>
-                    {organization}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              type="button"
-              className={`ghost-button${editMode ? ' is-active' : ''}`}
-              onClick={() => setEditMode((currentMode) => !currentMode)}
-            >
-              <SquarePen size={16} />
-              {editMode ? '편집 종료' : '편집 모드'}
-            </button>
-
-            <button type="button" className="ghost-button" onClick={resetBoard}>
-              <RotateCcw size={16} />
-              레이아웃 초기화
-            </button>
-          </div>
-        </header>
-
-        <section className="hero-strip">
-          <SummaryCard
-            icon={Wifi}
-            label="현재 활성 사용자"
-            value="128"
-            detail="최근 5분 heartbeat 기준"
-          />
-          <SummaryCard
-            icon={ShieldAlert}
-            label="오늘 위험 사용자"
-            value="14"
-            detail="L2 발생 또는 누적 위험도 70점 이상"
-          />
-          <SummaryCard
-            icon={BellRing}
-            label="금일 경고 이벤트"
-            value="53"
-            detail="L1 39건 / L2 14건"
-          />
-          <SummaryCard
-            icon={Clock3}
-            label="평균 세션 길이"
-            value="56m"
-            detail="조직 전체, 최근 7일 기준"
-          />
-        </section>
-
-        <section className="board-section">
-          <div className="board-section__header">
-            <div>
-              <p className="eyebrow">Workspace Board</p>
-              <h2>{selectedOrganization}</h2>
-            </div>
-            <div className="board-section__meta">
-              <span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span>
-              <span>{hiddenCount > 0 ? `숨김 ${hiddenCount}개` : '전체 표시 중'}</span>
-            </div>
-          </div>
-
-          {editMode ? (
-            <section className="widget-library" aria-label="위젯 표시 설정">
-              {widgetOrder.map((widgetId) => {
-                const meta = widgetMeta[widgetId]
-                const isVisible = visibleWidgets.includes(widgetId)
-
-                return (
-                  <button
-                    key={widgetId}
-                    type="button"
-                    className={`widget-library__chip${isVisible ? ' is-on' : ''}`}
-                    onClick={() => toggleWidget(widgetId)}
+              <div className="topbar__controls">
+                <label className="select-field">
+                  <Building2 size={16} />
+                  <select
+                    aria-label="조직 선택"
+                    value={selectedOrganization}
+                    onChange={(event) => setSelectedOrganization(event.target.value)}
                   >
-                    <span>{meta.title}</span>
-                    <small>{isVisible ? '표시 중' : '숨김'}</small>
-                  </button>
-                )
-              })}
-            </section>
-          ) : null}
+                    {organizations.map((organization) => (
+                      <option key={organization} value={organization}>
+                        {organization}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-          <ResponsiveGridLayout
-            className={`workspace-board${editMode ? ' is-editing' : ''}`}
-            layouts={layouts}
-            breakpoints={{ lg: 1000, md: 800, sm: 640, xs: 480, xxs: 0 }}
-            cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={40}
-            margin={[16, 16]}
-            containerPadding={[0, 0]}
-            draggableHandle=".widget-shell__header"
-            isDraggable={editMode}
-            isResizable={editMode}
-            onLayoutChange={handleLayoutChange}
-          >
-            {visibleWidgets.map((widgetId) => {
-              const defaultGridItem = defaultLayouts.lg?.find((l) => l.i === widgetId)
-              return (
-                <div key={widgetId} data-grid={defaultGridItem}>
-                  <WidgetShell meta={widgetMeta[widgetId]} editMode={editMode}>
-                    {renderWidget(widgetId, policies, togglePolicy)}
-                  </WidgetShell>
+                <button
+                  type="button"
+                  className={`ghost-button${editMode ? ' is-active' : ''}`}
+                  onClick={() => setEditMode((currentMode) => !currentMode)}
+                >
+                  <SquarePen size={16} />
+                  {editMode ? '편집 종료' : '편집 모드'}
+                </button>
+
+                <button type="button" className="ghost-button" onClick={resetBoard}>
+                  <RotateCcw size={16} />
+                  레이아웃 초기화
+                </button>
+              </div>
+            </header>
+
+            <section className="hero-strip">
+              <SummaryCard
+                icon={Wifi}
+                label="현재 활성 사용자"
+                value="128"
+                detail="최근 5분 heartbeat 기준"
+              />
+              <SummaryCard
+                icon={ShieldAlert}
+                label="오늘 위험 사용자"
+                value="14"
+                detail="L2 발생 또는 누적 위험도 70점 이상"
+              />
+              <SummaryCard
+                icon={BellRing}
+                label="금일 경고 이벤트"
+                value="53"
+                detail="L1 39건 / L2 14건"
+              />
+              <SummaryCard
+                icon={Clock3}
+                label="평균 세션 길이"
+                value="56m"
+                detail="조직 전체, 최근 7일 기준"
+              />
+            </section>
+
+            <section className="board-section">
+              <div className="board-section__header">
+                <div>
+                  <p className="eyebrow">Workspace Board</p>
+                  <h2>{selectedOrganization}</h2>
                 </div>
-              )
-            })}
-          </ResponsiveGridLayout>
-        </section>
+                <div className="board-section__meta">
+                  <span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span>
+                  <span>{hiddenCount > 0 ? `숨김 ${hiddenCount}개` : '전체 표시 중'}</span>
+                </div>
+              </div>
+
+              {editMode ? (
+                <section className="widget-library" aria-label="위젯 표시 설정">
+                  {widgetOrder.map((widgetId) => {
+                    const meta = widgetMeta[widgetId]
+                    const isVisible = visibleWidgets.includes(widgetId)
+
+                    return (
+                      <button
+                        key={widgetId}
+                        type="button"
+                        className={`widget-library__chip${isVisible ? ' is-on' : ''}`}
+                        onClick={() => toggleWidget(widgetId)}
+                      >
+                        <span>{meta.title}</span>
+                        <small>{isVisible ? '표시 중' : '숨김'}</small>
+                      </button>
+                    )
+                  })}
+                </section>
+              ) : null}
+
+              <ResponsiveGridLayout
+                className={`workspace-board${editMode ? ' is-editing' : ''}`}
+                layouts={layouts}
+                breakpoints={{ lg: 1000, md: 800, sm: 640, xs: 480, xxs: 0 }}
+                cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+                rowHeight={40}
+                margin={[16, 16]}
+                containerPadding={[0, 0]}
+                draggableHandle=".widget-shell__header"
+                isDraggable={editMode}
+                isResizable={editMode}
+                onLayoutChange={handleLayoutChange}
+              >
+                {visibleWidgets.map((widgetId) => {
+                  const defaultGridItem = defaultLayouts.lg?.find((l) => l.i === widgetId)
+                  return (
+                    <div key={widgetId} data-grid={defaultGridItem}>
+                      <WidgetShell meta={widgetMeta[widgetId]} editMode={editMode}>
+                        {renderWidget(widgetId, policies, togglePolicy)}
+                      </WidgetShell>
+                    </div>
+                  )
+                })}
+              </ResponsiveGridLayout>
+            </section>
+          </>
+        )}
+
+        {activeTab === 'members' && (
+          <>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <p className="eyebrow">Organization Roster</p>
+                <h1>구성원 관리</h1>
+                <p className="topbar__description">
+                  조직 내 모든 구성원의 정보와 상태를 확인하고 관리할 수 있습니다.
+                </p>
+              </div>
+              <div className="topbar__controls">
+                <label className="select-field">
+                  <Building2 size={16} />
+                  <select
+                    aria-label="조직 선택"
+                    value={selectedOrganization}
+                    onChange={(event) => setSelectedOrganization(event.target.value)}
+                  >
+                    {organizations.map((organization) => (
+                      <option key={organization} value={organization}>
+                        {organization}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </header>
+            <section className="board-section">
+              <div className="board-section__header">
+                <div>
+                  <p className="eyebrow">Directory</p>
+                  <h2>{selectedOrganization} 구성원 목록</h2>
+                </div>
+              </div>
+              <div className="table-shell" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: 'var(--color-muted)' }}>구성원 목록 상세 데이터 연동 준비 중...</p>
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeTab === 'alerts' && (
+          <>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <p className="eyebrow">Alert History</p>
+                <h1>이벤트 내역</h1>
+                <p className="topbar__description">
+                  과거부터 현재까지 발생한 모든 위험 감지 이벤트를 조회하고 대응 이력을 추적합니다.
+                </p>
+              </div>
+              <div className="topbar__controls">
+                <label className="select-field">
+                  <Building2 size={16} />
+                  <select
+                    aria-label="조직 선택"
+                    value={selectedOrganization}
+                    onChange={(event) => setSelectedOrganization(event.target.value)}
+                  >
+                    {organizations.map((organization) => (
+                      <option key={organization} value={organization}>
+                        {organization}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </header>
+            <section className="board-section">
+              <div className="board-section__header">
+                <div>
+                  <p className="eyebrow">Event Log</p>
+                  <h2>{selectedOrganization} 전체 이벤트</h2>
+                </div>
+              </div>
+              <div className="table-shell" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: 'var(--color-muted)' }}>전체 이벤트 내역 연동 준비 중...</p>
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeTab === 'policies' && (
+          <>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <p className="eyebrow">Policy Management</p>
+                <h1>조직 정책 설정</h1>
+                <p className="topbar__description">
+                  조직 전체에 적용될 알림 단계, 민감도, 및 시스템 정책을 상세하게 설정합니다.
+                </p>
+              </div>
+              <div className="topbar__controls">
+                <label className="select-field">
+                  <Building2 size={16} />
+                  <select
+                    aria-label="조직 선택"
+                    value={selectedOrganization}
+                    onChange={(event) => setSelectedOrganization(event.target.value)}
+                  >
+                    {organizations.map((organization) => (
+                      <option key={organization} value={organization}>
+                        {organization}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </header>
+            <section className="board-section">
+              <div className="board-section__header">
+                <div>
+                  <p className="eyebrow">Global Settings</p>
+                  <h2>{selectedOrganization} 세부 정책</h2>
+                </div>
+              </div>
+              <div className="table-shell" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: 'var(--color-muted)' }}>상세 정책 설정 폼 연동 준비 중...</p>
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
   )
