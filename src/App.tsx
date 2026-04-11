@@ -51,6 +51,7 @@ type AlertItem = {
   user: string
   team: string
   level: 'L1' | 'L2'
+  date: string
   time: string
   note: string
 }
@@ -65,6 +66,8 @@ type RiskUser = {
 type SessionRow = {
   user: string
   mode: string
+  date: string
+  startTime: string
   duration: string
   events: string
   sync: '동기화 완료' | '재시도 필요'
@@ -81,6 +84,7 @@ const navigationItems: NavigationItem[] = [
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
   { id: 'members', label: '구성원', icon: Users },
   { id: 'alerts', label: '이벤트', icon: BellRing },
+  { id: 'statistics', label: '통계', icon: Activity },
   { id: 'policies', label: '정책', icon: ShieldCheck },
 ]
 
@@ -182,6 +186,7 @@ const alertItems: AlertItem[] = [
     user: '김민수',
     team: '운수팀 A',
     level: 'L2',
+    date: '2026-04-11',
     time: '22:31',
     note: '수면 상태 3.2초 지속',
   },
@@ -189,6 +194,7 @@ const alertItems: AlertItem[] = [
     user: '박연우',
     team: '스터디룸 2',
     level: 'L1',
+    date: '2026-04-10',
     time: '22:24',
     note: '졸음 상태 반복 감지',
   },
@@ -196,6 +202,7 @@ const alertItems: AlertItem[] = [
     user: '이소율',
     team: '운수팀 C',
     level: 'L2',
+    date: '2026-04-11',
     time: '22:10',
     note: '경고 자동 종료 후 재발생',
   },
@@ -203,6 +210,7 @@ const alertItems: AlertItem[] = [
     user: '정하준',
     team: '업무팀 1',
     level: 'L1',
+    date: '2026-04-01',
     time: '21:58',
     note: '장시간 무반응',
   },
@@ -219,6 +227,8 @@ const sessionRows: SessionRow[] = [
   {
     user: '김민수',
     mode: '운전',
+    date: '2026-04-11',
+    startTime: '20:49',
     duration: '1h 42m',
     events: 'L1 3회 / L2 1회',
     sync: '동기화 완료',
@@ -226,6 +236,8 @@ const sessionRows: SessionRow[] = [
   {
     user: '최은재',
     mode: '스터디',
+    date: '2026-04-10',
+    startTime: '21:40',
     duration: '52m',
     events: 'L1 1회',
     sync: '동기화 완료',
@@ -233,6 +245,8 @@ const sessionRows: SessionRow[] = [
   {
     user: '이소율',
     mode: '운전',
+    date: '2026-04-11',
+    startTime: '20:02',
     duration: '2h 08m',
     events: 'L1 2회 / L2 2회',
     sync: '재시도 필요',
@@ -240,8 +254,19 @@ const sessionRows: SessionRow[] = [
   {
     user: '정하준',
     mode: '업무',
+    date: '2026-04-01',
+    startTime: '21:21',
     duration: '37m',
     events: 'L1 1회',
+    sync: '동기화 완료',
+  },
+  {
+    user: '김도현',
+    mode: '운전',
+    date: '2026-03-25',
+    startTime: '18:15',
+    duration: '4h 10m',
+    events: 'L1 2회',
     sync: '동기화 완료',
   },
 ]
@@ -342,6 +367,36 @@ function App() {
     heartbeat: true,
     nightMode: false,
   })
+  const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
+  
+  const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
+  const [statStartDate, setStatStartDate] = useState('2026-04-04')
+  const [statEndDate, setStatEndDate] = useState('2026-04-11')
+
+  const getWeekStr = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+    const dayNum = d.getUTCDay() || 7
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+    const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+    return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
+  }
+
+  const getWeekOfMonthStr = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const year = date.getFullYear()
+    const month = date.getMonth() + 1
+    const day = date.getDate()
+    const firstDay = new Date(year, date.getMonth(), 1).getDay()
+    const weekNo = Math.ceil((day + (firstDay === 0 ? 6 : firstDay - 1)) / 7)
+    return `${year}-${month}월 ${weekNo}주차`
+  }
+
+  const [alertFilterStartDate, setAlertFilterStartDate] = useState('2026-04-04')
+  const [alertFilterEndDate, setAlertFilterEndDate] = useState('2026-04-11')
+  const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
+  const [selectedStatGroup, setSelectedStatGroup] = useState<{ key: string, items: AlertItem[] } | null>(null)
 
   useEffect(() => {
     window.localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(layouts))
@@ -484,24 +539,7 @@ function App() {
           ))}
         </nav>
 
-        <section className="sidebar__panel">
-          <p className="eyebrow">Frontend Scope</p>
-          <h2>백엔드 팀원과 맞출 계약</h2>
-          <ul className="sidebar__list">
-            <li>`GET /admin/dashboard`</li>
-            <li>`GET /admin/members`</li>
-            <li>`GET /admin/sessions/:id`</li>
-            <li>`PUT /admin/policies`</li>
-          </ul>
-        </section>
 
-        <section className="sidebar__panel sidebar__panel--muted">
-          <p className="eyebrow">Current Note</p>
-          <p className="sidebar__note">
-            지금 화면은 목업 데이터 기준입니다. 팀원이 API를 만들면
-            컴포넌트의 데이터 소스만 교체하면 됩니다.
-          </p>
-        </section>
       </aside>
 
       <main className="workspace">
@@ -509,11 +547,11 @@ function App() {
           <>
             <header className="topbar">
               <div className="topbar__copy">
-                <p className="eyebrow">Block-Based Dashboard</p>
-                <h1>조직 관리자 대시보드 프론트 스타터</h1>
+                <p className="eyebrow">Real-time Monitoring</p>
+                <h1>통합 관제 대시보드</h1>
                 <p className="topbar__description">
-                  수정 가능한 위젯 보드, 정책 제어, 세션 로그, 위험 사용자 큐를 한
-                  화면에서 다루는 형태로 구성했습니다.
+                  실시간 위험 사용자 탐지, 세션 분석 및 조직 정책 제어 기능을 통합하여
+                  조직의 안전과 효율성을 한눈에 관리할 수 있습니다.
                 </p>
               </div>
 
@@ -627,7 +665,16 @@ function App() {
                   return (
                     <div key={widgetId} data-grid={defaultGridItem}>
                       <WidgetShell meta={widgetMeta[widgetId]} editMode={editMode}>
-                        {renderWidget(widgetId, policies, togglePolicy, setActiveTab)}
+                        {renderWidget(
+                          widgetId, 
+                          policies, 
+                          togglePolicy, 
+                          setActiveTab, 
+                          (userName) => {
+                            setActiveTab('members');
+                            setSelectedUserForDetail(userName);
+                          }
+                        )}
                       </WidgetShell>
                     </div>
                   )
@@ -642,9 +689,10 @@ function App() {
             <header className="topbar">
               <div className="topbar__copy">
                 <p className="eyebrow">Organization Roster</p>
-                <h1>구성원 관리</h1>
+                <h1>구성원 관리 시스템</h1>
                 <p className="topbar__description">
-                  조직 내 모든 구성원의 정보와 상태를 확인하고 관리할 수 있습니다.
+                  조직 구성원의 실시간 활동 현황과 위험도 이력을 조회하고,
+                  상세 세션 로그를 통해 체계적인 인원 관리를 지원합니다.
                 </p>
               </div>
               <div className="topbar__controls">
@@ -707,7 +755,7 @@ function App() {
                           <span className={`sync-badge is-good`}>활성</span>
                         </td>
                         <td>
-                          <button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button>
+                          <button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail(user.name)}>상세 정보</button>
                         </td>
                       </tr>
                     ))}
@@ -724,7 +772,7 @@ function App() {
                         </div>
                       </td>
                       <td><span className={`sync-badge`}>오프라인</span></td>
-                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button></td>
+                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail('최은재')}>상세 정보</button></td>
                     </tr>
                     <tr>
                       <td><strong>김도현</strong></td>
@@ -739,7 +787,7 @@ function App() {
                         </div>
                       </td>
                       <td><span className={`sync-badge`}>오프라인</span></td>
-                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button></td>
+                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail('김도현')}>상세 정보</button></td>
                     </tr>
                   </tbody>
                 </table>
@@ -748,93 +796,375 @@ function App() {
           </>
         )}
 
-        {activeTab === 'alerts' && (
-          <>
-            <header className="topbar">
-              <div className="topbar__copy">
-                <p className="eyebrow">Alert History</p>
-                <h1>이벤트 내역</h1>
-                <p className="topbar__description">
-                  과거부터 현재까지 발생한 모든 위험 감지 이벤트를 조회하고 대응 이력을 추적합니다.
-                </p>
-              </div>
-              <div className="topbar__controls">
-                <label className="select-field">
-                  <Building2 size={16} />
-                  <select
-                    aria-label="조직 선택"
-                    value={selectedOrganization}
-                    onChange={(event) => setSelectedOrganization(event.target.value)}
-                  >
-                    {organizations.map((organization) => (
-                      <option key={organization} value={organization}>
-                        {organization}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </header>
-            <section className="board-section">
-              <div className="board-section__header">
-                <div>
-                  <p className="eyebrow">Event Log</p>
-                  <h2>{selectedOrganization} 전체 이벤트</h2>
+        {activeTab === 'alerts' && (() => {
+          const filteredAlerts = alertItems.filter(item => {
+            const itemDate = new Date(item.date).getTime()
+            const start = new Date(alertFilterStartDate).getTime()
+            const end = new Date(alertFilterEndDate).getTime()
+            if (itemDate < start || itemDate > end) return false
+
+            if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) return false
+
+            return true
+          })
+
+          const handleExportCSV = () => {
+            const headers = ['날짜', '발생 시간', '사용자', '소속', '경고 단계', '상세 내용']
+            const rows = filteredAlerts.map(a => [a.date, a.time, a.user, a.team, a.level, a.note])
+            const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n")
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement("a")
+            link.setAttribute("href", url)
+            link.setAttribute("download", `alerts_export_${alertFilterStartDate}_${alertFilterEndDate}.csv`)
+            link.style.visibility = 'hidden'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+          }
+
+          return (
+            <>
+              <header className="topbar">
+                <div className="topbar__copy">
+                  <p className="eyebrow">Alert History</p>
+                  <h1>졸음 및 위험 감지 로그</h1>
+                  <p className="topbar__description">
+                    시스템에 의해 감지된 모든 위험 이벤트를 실시간으로 기록하며,
+                    과거 이력 조회 및 정밀한 분석 데이터를 제공합니다.
+                  </p>
                 </div>
-                <div className="search-strip" style={{ marginBottom: 0, background: 'none', border: 'none', padding: 0 }}>
-                  <button type="button" className="ghost-button" onClick={() => alert('날짜 필터 모달이 열립니다.')}>날짜 필터</button>
-                  <button type="button" className="ghost-button" onClick={() => alert('단계 필터 모달이 열립니다.')}>단계 필터</button>
-                  <button type="button" className="ghost-button" onClick={() => alert('CSV 다운로드를 시작합니다.')}>내보내기</button>
+                <div className="topbar__controls">
+                  <label className="select-field">
+                    <Building2 size={16} />
+                    <select
+                      aria-label="조직 선택"
+                      value={selectedOrganization}
+                      onChange={(event) => setSelectedOrganization(event.target.value)}
+                    >
+                      {organizations.map((organization) => (
+                        <option key={organization} value={organization}>
+                          {organization}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-              </div>
-              <div className="table-shell">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>발생 시간</th>
-                      <th>사용자</th>
-                      <th>소속</th>
-                      <th>경고 단계</th>
-                      <th>상세 내용</th>
-                      <th>조치 상태</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alertItems.map((item, i) => (
-                      <tr key={i}>
-                        <td>{item.time}</td>
-                        <td><strong>{item.user}</strong></td>
-                        <td>{item.team}</td>
-                        <td>
-                          <span className={`feed-row__level feed-row__level--${item.level}`}>
-                            {item.level}
-                          </span>
-                        </td>
-                        <td>{item.note}</td>
-                        <td>
-                          {item.level === 'L2' ? (
-                            <span className="sync-badge is-bad">확인 필요</span>
-                          ) : (
-                            <span className="sync-badge is-good">자동 종료됨</span>
-                          )}
-                        </td>
+              </header>
+              <section className="board-section">
+                <div className="board-section__header">
+                  <div>
+                    <p className="eyebrow">Event Log</p>
+                    <h2>{selectedOrganization} 전체 이벤트</h2>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" className="ghost-button" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => {
+                      setAlertFilterStartDate('2026-04-11');
+                      setAlertFilterEndDate('2026-04-11');
+                    }}>오늘</button>
+                    <button type="button" className="ghost-button" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => {
+                      setAlertFilterStartDate('2026-04-04');
+                      setAlertFilterEndDate('2026-04-11');
+                    }}>최근 7일</button>
+                    <button type="button" className="ghost-button" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => {
+                      setAlertFilterStartDate('2026-04-01');
+                      setAlertFilterEndDate('2026-04-30');
+                    }}>이번 달</button>
+                    <button type="button" className="ghost-button" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => {
+                      setAlertFilterStartDate('2026-01-01');
+                      setAlertFilterEndDate('2026-12-31');
+                    }}>올해</button>
+                  </div>
+                </div>
+                <div className="search-strip" style={{ marginBottom: 0, background: 'none', border: 'none', padding: '12px 0', gap: '16px', borderBottom: '1px solid var(--color-border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '0.9rem', fontWeight: 500 }}>조회 기간:</label>
+                    <input type="date" value={alertFilterStartDate} onChange={(e) => setAlertFilterStartDate(e.target.value)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)', fontSize: '0.85rem' }} />
+                    <span style={{ fontSize: '0.85rem' }}>~</span>
+                    <input type="date" value={alertFilterEndDate} onChange={(e) => setAlertFilterEndDate(e.target.value)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)', fontSize: '0.85rem' }} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '0.9rem', fontWeight: 500 }}>단계:</label>
+                    <select 
+                      value={alertFilterLevel} 
+                      onChange={(e) => setAlertFilterLevel(e.target.value as any)}
+                      style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)', fontSize: '0.85rem' }}
+                    >
+                      <option value="all">모든 단계</option>
+                      <option value="L1">L1 주의</option>
+                      <option value="L2">L2 경고</option>
+                    </select>
+                  </div>
+                  <button type="button" className="ghost-button" style={{ marginLeft: 'auto', background: '#eee', color: '#000', fontWeight: 600 }} onClick={handleExportCSV}>내보내기 (CSV)</button>
+                </div>
+                <div className="table-shell">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>발생 시간</th>
+                        <th>사용자</th>
+                        <th>소속</th>
+                        <th>경고 단계</th>
+                        <th>상세 내용</th>
+                        <th>조치 상태</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
+                    </thead>
+                    <tbody>
+                      {filteredAlerts.length > 0 ? (
+                        filteredAlerts.map((item, i) => (
+                          <tr key={i}>
+                            <td>{item.date}</td>
+                            <td>{item.time}</td>
+                            <td><strong>{item.user}</strong></td>
+                            <td>{item.team}</td>
+                            <td>
+                              <span className={`feed-row__level feed-row__level--${item.level}`}>
+                                {item.level}
+                              </span>
+                            </td>
+                            <td>{item.note}</td>
+                            <td>
+                              {item.level === 'L2' ? (
+                                <span className="sync-badge is-bad">확인 필요</span>
+                              ) : (
+                                <span className="sync-badge is-good">자동 종료됨</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted)' }}>
+                            해당 조건에 맞는 이벤트가 없습니다.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )
+        })()}
+
+        {activeTab === 'statistics' && (() => {
+          const filteredStats = alertItems.filter(item => {
+            if (statType === 'hourly' || statType === 'daily') {
+              const itemDate = new Date(item.date).getTime()
+              const start = new Date(statStartDate).getTime()
+              const end = new Date(statEndDate).getTime()
+              return !(itemDate < start || itemDate > end)
+            } else if (statType === 'weekly') {
+              const itemWeek = getWeekStr(item.date)
+              // Comparison assumes statStartDate/End are in YYYY-Www format when type=week
+              return itemWeek >= statStartDate && itemWeek <= statEndDate
+            } else if (statType === 'monthly') {
+              const itemMonth = item.date.substring(0, 7)
+              return itemMonth >= statStartDate.substring(0, 7) && itemMonth <= statEndDate.substring(0, 7)
+            } else if (statType === 'yearly') {
+              const itemYear = item.date.substring(0, 4)
+              return itemYear >= statStartDate.substring(0, 4) && itemYear <= statEndDate.substring(0, 4)
+            }
+            return true
+          })
+
+          const groupedStats = filteredStats.reduce((acc, item) => {
+            let key = ''
+            const dateObj = new Date(item.date)
+            if (statType === 'hourly') {
+              const hour = parseInt(item.time.split(':')[0])
+              key = `${item.date} ${String(hour).padStart(2, '0')}:00 ~ ${String(hour + 1).padStart(2, '0')}:00`
+            } else if (statType === 'daily') {
+              key = item.date
+            } else if (statType === 'weekly') {
+              key = getWeekOfMonthStr(item.date)
+            } else if (statType === 'monthly') {
+              key = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}월`
+            } else if (statType === 'yearly') {
+              key = `${dateObj.getFullYear()}년`
+            }
+
+            if (!acc[key]) {
+              acc[key] = { key, total: 0, l1: 0, l2: 0, items: [] as AlertItem[] }
+            }
+            acc[key].total += 1
+            if (item.level === 'L1') acc[key].l1 += 1
+            if (item.level === 'L2') acc[key].l2 += 1
+            acc[key].items.push(item)
+
+            return acc
+          }, {} as Record<string, { key: string, total: number, l1: number, l2: number, items: AlertItem[] }>)
+
+          const statResult = Object.values(groupedStats).sort((a, b) => b.key.localeCompare(a.key))
+          const statMax = Math.max(...statResult.map(r => r.total), 1)
+
+          const handleViewEvents = (key: string, items: AlertItem[]) => {
+            setSelectedStatGroup({ key, items });
+          }
+
+          const renderDatePickers = () => {
+            const commonStyle = { padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)', fontSize: '0.85rem' }
+            
+            if (statType === 'hourly' || statType === 'daily') {
+              return (
+                <>
+                  <input type="date" value={statStartDate} onChange={(e) => setStatStartDate(e.target.value)} style={commonStyle} />
+                  <span>~</span>
+                  <input type="date" value={statEndDate} onChange={(e) => setStatEndDate(e.target.value)} style={commonStyle} />
+                </>
+              )
+            } else if (statType === 'weekly') {
+              return (
+                <>
+                  <input type="week" value={statStartDate.includes('W') ? statStartDate : getWeekStr(statStartDate)} onChange={(e) => setStatStartDate(e.target.value)} style={commonStyle} />
+                  <span>~</span>
+                  <input type="week" value={statEndDate.includes('W') ? statEndDate : getWeekStr(statEndDate)} onChange={(e) => setStatEndDate(e.target.value)} style={commonStyle} />
+                </>
+              )
+            } else if (statType === 'monthly') {
+              return (
+                <>
+                  <input type="month" value={statStartDate.substring(0, 7)} onChange={(e) => setStatStartDate(e.target.value + '-01')} style={commonStyle} />
+                  <span>~</span>
+                  <input type="month" value={statEndDate.substring(0, 7)} onChange={(e) => setStatEndDate(e.target.value + '-01')} style={commonStyle} />
+                </>
+              )
+            } else if (statType === 'yearly') {
+              const years = ['2024', '2025', '2026']
+              return (
+                <>
+                  <select value={statStartDate.substring(0, 4)} onChange={(e) => setStatStartDate(e.target.value + '-01-01')} style={commonStyle}>
+                    {years.map(y => <option key={y} value={y}>{y}년</option>)}
+                  </select>
+                  <span>~</span>
+                  <select value={statEndDate.substring(0, 4)} onChange={(e) => setStatEndDate(e.target.value + '-01-01')} style={commonStyle}>
+                    {years.map(y => <option key={y} value={y}>{y}년</option>)}
+                  </select>
+                </>
+              )
+            }
+          }
+
+          return (
+            <>
+              <header className="topbar">
+                <div className="topbar__copy">
+                  <p className="eyebrow">Statistics & Trends</p>
+                  <h1>졸음 발생 패턴 및 통계 분석</h1>
+                  <p className="topbar__description">
+                    시간대별, 기간별 다각도 통계 데이터를 통해 조직 내 졸음 취약 구간을 파악하고
+                    안전 정책 수립을 위한 핵심 인사이트를 제공합니다.
+                  </p>
+                </div>
+                <div className="topbar__controls">
+                  <label className="select-field">
+                    <Building2 size={16} />
+                    <select
+                      aria-label="조직 선택"
+                      value={selectedOrganization}
+                      onChange={(event) => setSelectedOrganization(event.target.value)}
+                    >
+                      {organizations.map((organization) => (
+                        <option key={organization} value={organization}>
+                          {organization}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </header>
+              
+              <section className="board-section">
+                <div className="board-section__header">
+                  <div>
+                    <p className="eyebrow">Data Table</p>
+                    <h2>상세 통계 데이터</h2>
+                  </div>
+                  <div className="search-strip" style={{ marginBottom: 0, background: 'none', border: 'none', padding: 0 }}>
+                    <button type="button" className={`ghost-button${statType === 'hourly' ? ' is-active' : ''}`} onClick={() => { setStatType('hourly'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>시간대</button>
+                    <button type="button" className={`ghost-button${statType === 'daily' ? ' is-active' : ''}`} onClick={() => { setStatType('daily'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>일</button>
+                    <button type="button" className={`ghost-button${statType === 'weekly' ? ' is-active' : ''}`} onClick={() => { setStatType('weekly'); setStatStartDate('2026-W10'); setStatEndDate('2026-W15'); }}>주</button>
+                    <button type="button" className={`ghost-button${statType === 'monthly' ? ' is-active' : ''}`} onClick={() => { setStatType('monthly'); setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31'); }}>월</button>
+                    <button type="button" className={`ghost-button${statType === 'yearly' ? ' is-active' : ''}`} onClick={() => { setStatType('yearly'); setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31'); }}>년</button>
+                  </div>
+                </div>
+
+                <div className="widget-stack" style={{ background: 'var(--color-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)', marginTop: '16px' }}>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <label style={{ fontSize: '0.9rem', fontWeight: 500 }}>조회 기간:</label>
+                      {renderDatePickers()}
+                    </div>
+                    
+                    <button type="button" className="ghost-button" style={{ background: '#eee', color: '#000', padding: '6px 16px', fontWeight: 600 }}>적용</button>
+                    <button type="button" className="ghost-button" style={{ padding: '6px 16px' }} onClick={() => {
+                      setStatType('hourly')
+                      setStatStartDate('2026-04-04')
+                      setStatEndDate('2026-04-11')
+                    }}>초기화</button>
+                  </div>
+
+                  {statResult.length > 0 ? (
+                    <div className="table-shell">
+                      <table style={{ margin: 0 }}>
+                        <thead>
+                          <tr>
+                            <th>기준 ({statType === 'hourly' ? '시간대' : statType === 'daily' ? '일' : statType === 'weekly' ? '주' : statType === 'monthly' ? '월' : '년'})</th>
+                            <th>총 이벤트 수</th>
+                            <th>L1 주의 알림</th>
+                            <th>L2 졸음 경고</th>
+                            <th>발생 비율</th>
+                            <th>관리</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statResult.map(row => {
+                            const percentage = Math.round((row.total / statMax) * 100)
+                            return (
+                              <tr key={row.key}>
+                                <td>{row.key}</td>
+                                <td><strong>{row.total}건</strong></td>
+                                <td>{row.l1}건</td>
+                                <td>{row.l2}건</td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ minWidth: '40px' }}>{percentage}%</span>
+                                    <div style={{ flex: 1, height: '4px', background: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${percentage}%`, height: '100%', background: percentage > 50 ? 'var(--color-danger, #ef4444)' : 'var(--color-warning, #f59e0b)' }} />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleViewEvents(row.key, row.items)}>이벤트 확인</button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '32px', textAlign: 'center', background: 'var(--color-surface)', borderRadius: '8px', color: 'var(--color-muted)' }}>
+                      해당 조건에 맞는 통계 데이터가 없습니다.
+                    </div>
+                  )}
+
+                </div>
+              </section>
+            </>
+          )
+        })()}
 
         {activeTab === 'policies' && (
           <>
             <header className="topbar">
               <div className="topbar__copy">
                 <p className="eyebrow">Policy Management</p>
-                <h1>조직 정책 설정</h1>
+                <h1>전사 안전 운영 정책 설정</h1>
                 <p className="topbar__description">
-                  조직 전체에 적용될 알림 단계, 민감도, 및 시스템 정책을 상세하게 설정합니다.
+                  감지 민감도, 경고 알림 단계 및 사용자 피드백 방식을 조정하여
+                  조직 환경에 최적화된 맞춤형 안전 가이드라인을 수립합니다.
                 </p>
               </div>
               <div className="topbar__controls">
@@ -931,6 +1261,8 @@ function App() {
           </>
         )}
       </main>
+      {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} onClose={() => setSelectedUserForDetail(null)} />}
+      {selectedStatGroup && <StatEventModal groupKey={selectedStatGroup.key} items={selectedStatGroup.items} onClose={() => setSelectedStatGroup(null)} />}
     </div>
   )
 }
@@ -940,12 +1272,13 @@ function renderWidget(
   policies: Record<PolicyKey, boolean>,
   onTogglePolicy: (policyKey: PolicyKey) => void,
   setActiveTab: (tab: string) => void,
+  onShowUserDetail: (userName: string) => void,
 ) {
   switch (widgetId) {
     case 'activeUsers':
       return <ActiveUsersWidget />
     case 'riskUsers':
-      return <RiskUsersWidget setActiveTab={setActiveTab} />
+      return <RiskUsersWidget onShowUserDetail={onShowUserDetail} />
     case 'alertFeed':
       return <AlertFeedWidget setActiveTab={setActiveTab} />
     case 'hourlyTrend':
@@ -1066,7 +1399,7 @@ function MetricItem({
   )
 }
 
-function RiskUsersWidget({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
+function RiskUsersWidget({ onShowUserDetail }: { onShowUserDetail?: (userName: string) => void }) {
   return (
     <div className="widget-stack">
       {riskUsers.map((user) => (
@@ -1083,7 +1416,7 @@ function RiskUsersWidget({ setActiveTab }: { setActiveTab?: (tab: string) => voi
           </div>
           <div className="risk-row__footer">
             <span>위험도 {user.riskScore}</span>
-            <button type="button" onClick={() => setActiveTab?.('members')}>상세 보기</button>
+            <button type="button" onClick={() => onShowUserDetail?.(user.name)}>상세 보기</button>
           </div>
         </article>
       ))}
@@ -1247,5 +1580,179 @@ function PolicyCenterWidget({
   )
 }
 
-export default App
+function StatEventModal({ groupKey, items, onClose }: { groupKey: string, items: AlertItem[], onClose: () => void }) {
+  return (
+    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}>
+      <div className="modal-content" style={{ background: 'var(--color-bg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+        <header style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-surface)' }}>
+          <div>
+            <p className="eyebrow" style={{ margin: 0 }}>통계 상세 이력</p>
+            <h2 style={{ margin: '4px 0 0 0', fontSize: '1.25rem' }}>{groupKey} <span style={{ fontSize: '0.9rem', color: 'var(--color-muted)', fontWeight: 'normal', marginLeft: '8px' }}>발생 이벤트 목록</span></h2>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button>
+        </header>
 
+        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+          <div className="table-shell">
+            <table style={{ margin: 0 }}>
+              <thead>
+                <tr>
+                  <th>발생 시간</th>
+                  <th>사용자</th>
+                  <th>소속</th>
+                  <th>경고 단계</th>
+                  <th>상세 내용</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i}>
+                    <td>{item.time}</td>
+                    <td><strong>{item.user}</strong></td>
+                    <td>{item.team}</td>
+                    <td>
+                      <span className={`feed-row__level feed-row__level--${item.level}`}>
+                        {item.level}
+                      </span>
+                    </td>
+                    <td>{item.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UserDetailModal({ userName, onClose }: { userName: string, onClose: () => void }) {
+  const [filterDays, setFilterDays] = useState<number | null>(7)
+
+  const userRisk = riskUsers.find(u => u.name === userName) || { name: userName, team: '미상', riskScore: 0, sessionsToday: 0 }
+  
+  const filterByDate = (dateStr: string) => {
+    if (filterDays === null) return true
+    const itemDate = new Date(dateStr).getTime()
+    const today = new Date('2026-04-11').getTime()
+    const diffDays = (today - itemDate) / (1000 * 3600 * 24)
+    return diffDays <= filterDays && diffDays >= 0
+  }
+
+  const userAlerts = alertItems.filter(a => a.user === userName && filterByDate(a.date))
+  const userSessions = sessionRows.filter(s => s.user === userName && filterByDate(s.date))
+
+  return (
+    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}>
+      <div className="modal-content" style={{ background: 'var(--color-bg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+        <header style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-surface)' }}>
+          <div>
+            <p className="eyebrow" style={{ margin: 0 }}>구성원 상세</p>
+            <h2 style={{ margin: '4px 0 0 0', fontSize: '1.25rem' }}>{userName} <span style={{ fontSize: '0.9rem', color: 'var(--color-muted)', fontWeight: 'normal', marginLeft: '8px' }}>{userRisk.team}</span></h2>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <select 
+              value={filterDays === null ? 'all' : filterDays.toString()} 
+              onChange={(e) => setFilterDays(e.target.value === 'all' ? null : Number(e.target.value))}
+              style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-fg)', fontSize: '0.9rem' }}
+            >
+              <option value="7">최근 7일</option>
+              <option value="30">최근 30일</option>
+              <option value="all">전체 기간</option>
+            </select>
+            <button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button>
+          </div>
+        </header>
+
+        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          
+          <section>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldAlert size={18} />
+              졸음 이벤트 로그 ({userAlerts.length}건)
+            </h3>
+            {userAlerts.length > 0 ? (
+              <div className="table-shell">
+                <table style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>날짜</th>
+                      <th>발생 시간</th>
+                      <th>경고 단계</th>
+                      <th>상세 내용</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userAlerts.map((alert, i) => (
+                      <tr key={i}>
+                        <td>{alert.date}</td>
+                        <td>{alert.time}</td>
+                        <td>
+                          <span className={`feed-row__level feed-row__level--${alert.level}`}>
+                            {alert.level}
+                          </span>
+                        </td>
+                        <td>{alert.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ padding: '24px', textAlign: 'center', background: 'var(--color-surface)', borderRadius: '8px', color: 'var(--color-muted)' }}>
+                해당 기간에 발생한 졸음 이벤트가 없습니다.
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock3 size={18} />
+              세션 (서버 접속) 로그 ({userSessions.length}건)
+            </h3>
+            {userSessions.length > 0 ? (
+              <div className="table-shell">
+                <table style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>날짜</th>
+                      <th>시작 시간</th>
+                      <th>모드</th>
+                      <th>러닝 타임</th>
+                      <th>이벤트 요약</th>
+                      <th>동기화 상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userSessions.map((session, i) => (
+                      <tr key={i}>
+                        <td>{session.date}</td>
+                        <td>{session.startTime}</td>
+                        <td>{session.mode}</td>
+                        <td>{session.duration}</td>
+                        <td>{session.events || '-'}</td>
+                        <td>
+                          <span className={`sync-badge${session.sync === '동기화 완료' ? ' is-good' : ' is-bad'}`}>
+                            {session.sync}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ padding: '24px', textAlign: 'center', background: 'var(--color-surface)', borderRadius: '8px', color: 'var(--color-muted)' }}>
+                해당 기간에 기록된 세션이 없습니다.
+              </div>
+            )}
+          </section>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default App
