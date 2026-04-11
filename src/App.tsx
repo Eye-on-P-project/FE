@@ -627,7 +627,7 @@ function App() {
                   return (
                     <div key={widgetId} data-grid={defaultGridItem}>
                       <WidgetShell meta={widgetMeta[widgetId]} editMode={editMode}>
-                        {renderWidget(widgetId, policies, togglePolicy)}
+                        {renderWidget(widgetId, policies, togglePolicy, setActiveTab)}
                       </WidgetShell>
                     </div>
                   )
@@ -670,9 +670,79 @@ function App() {
                   <p className="eyebrow">Directory</p>
                   <h2>{selectedOrganization} 구성원 목록</h2>
                 </div>
+                <div className="search-strip" style={{ marginBottom: 0 }}>
+                  <div className="search-strip__input">
+                    <Search size={16} />
+                    <span>이름 또는 부서 검색</span>
+                  </div>
+                </div>
               </div>
-              <div className="table-shell" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ color: 'var(--color-muted)' }}>구성원 목록 상세 데이터 연동 준비 중...</p>
+              <div className="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>사용자</th>
+                      <th>소속</th>
+                      <th>금일 세션 수</th>
+                      <th>최근 위험도 점수</th>
+                      <th>상태</th>
+                      <th>관리</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {riskUsers.map((user) => (
+                      <tr key={user.name}>
+                        <td><strong>{user.name}</strong></td>
+                        <td>{user.team}</td>
+                        <td>{user.sessionsToday}회</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ minWidth: '30px' }}>{user.riskScore}</span>
+                            <div style={{ flex: 1, height: '4px', background: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                              <div style={{ width: `${user.riskScore}%`, height: '100%', background: user.riskScore > 80 ? 'var(--color-danger, #ef4444)' : user.riskScore > 60 ? 'var(--color-warning, #f59e0b)' : 'var(--color-success, #10b981)' }} />
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`sync-badge is-good`}>활성</span>
+                        </td>
+                        <td>
+                          <button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td><strong>최은재</strong></td>
+                      <td>스터디룸 1</td>
+                      <td>1회</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ minWidth: '30px' }}>12</span>
+                          <div style={{ flex: 1, height: '4px', background: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ width: `12%`, height: '100%', background: 'var(--color-success, #10b981)' }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className={`sync-badge`}>오프라인</span></td>
+                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button></td>
+                    </tr>
+                    <tr>
+                      <td><strong>김도현</strong></td>
+                      <td>운수팀 B</td>
+                      <td>2회</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ minWidth: '30px' }}>45</span>
+                          <div style={{ flex: 1, height: '4px', background: 'var(--color-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ width: `45%`, height: '100%', background: 'var(--color-success, #10b981)' }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className={`sync-badge`}>오프라인</span></td>
+                      <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }}>상세 정보</button></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </section>
           </>
@@ -711,9 +781,47 @@ function App() {
                   <p className="eyebrow">Event Log</p>
                   <h2>{selectedOrganization} 전체 이벤트</h2>
                 </div>
+                <div className="search-strip" style={{ marginBottom: 0, background: 'none', border: 'none', padding: 0 }}>
+                  <button type="button" className="ghost-button" onClick={() => alert('날짜 필터 모달이 열립니다.')}>날짜 필터</button>
+                  <button type="button" className="ghost-button" onClick={() => alert('단계 필터 모달이 열립니다.')}>단계 필터</button>
+                  <button type="button" className="ghost-button" onClick={() => alert('CSV 다운로드를 시작합니다.')}>내보내기</button>
+                </div>
               </div>
-              <div className="table-shell" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ color: 'var(--color-muted)' }}>전체 이벤트 내역 연동 준비 중...</p>
+              <div className="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>발생 시간</th>
+                      <th>사용자</th>
+                      <th>소속</th>
+                      <th>경고 단계</th>
+                      <th>상세 내용</th>
+                      <th>조치 상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alertItems.map((item, i) => (
+                      <tr key={i}>
+                        <td>{item.time}</td>
+                        <td><strong>{item.user}</strong></td>
+                        <td>{item.team}</td>
+                        <td>
+                          <span className={`feed-row__level feed-row__level--${item.level}`}>
+                            {item.level}
+                          </span>
+                        </td>
+                        <td>{item.note}</td>
+                        <td>
+                          {item.level === 'L2' ? (
+                            <span className="sync-badge is-bad">확인 필요</span>
+                          ) : (
+                            <span className="sync-badge is-good">자동 종료됨</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
           </>
@@ -752,9 +860,72 @@ function App() {
                   <p className="eyebrow">Global Settings</p>
                   <h2>{selectedOrganization} 세부 정책</h2>
                 </div>
+                <button type="button" className="ghost-button" style={{ background: 'var(--color-fg)', color: 'var(--color-bg)' }}>
+                  변경 사항 저장
+                </button>
               </div>
-              <div className="table-shell" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ color: 'var(--color-muted)' }}>상세 정책 설정 폼 연동 준비 중...</p>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginTop: '16px' }}>
+                <div className="widget-stack" style={{ background: 'var(--color-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                  <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>알림 및 경고 활성화</h3>
+                  {policyDefinitions.map((policy) => (
+                    <article key={policy.key} className="policy-row" style={{ padding: '12px 0', borderBottom: '1px solid var(--color-border)', background: 'transparent' }}>
+                      <div className="policy-row__copy">
+                        <strong>{policy.title}</strong>
+                        <p style={{ marginTop: '4px', fontSize: '0.85rem', color: 'var(--color-muted)' }}>{policy.description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className={`policy-toggle${policies[policy.key] ? ' is-on' : ''}`}
+                        onClick={() => togglePolicy(policy.key)}
+                        aria-pressed={policies[policy.key]}
+                      >
+                        <span />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="widget-stack" style={{ background: 'var(--color-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                  <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>상세 민감도 설정</h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '0.9rem' }}>1단계 주의 알림 민감도</label>
+                      <select style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)' }}>
+                        <option>보통 (기본값)</option>
+                        <option>민감 (빠른 감지)</option>
+                        <option>둔감 (오탐 최소화)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '0.9rem' }}>2단계 경고 알림 민감도</label>
+                      <select style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)' }}>
+                        <option>보통 (기본값)</option>
+                        <option>민감 (빠른 감지)</option>
+                        <option>둔감 (오탐 최소화)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '0.9rem' }}>1단계 알림음 설정</label>
+                      <select style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)' }}>
+                        <option>기본 알림음 1 (띠링)</option>
+                        <option>기본 알림음 2 (부드러운 소리)</option>
+                        <option>진동만</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '0.9rem' }}>2단계 경고음 설정</label>
+                      <select style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-fg)' }}>
+                        <option>기본 경고음 1 (강한 사이렌)</option>
+                        <option>기본 경고음 2 (연속 비프음)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
           </>
@@ -768,14 +939,15 @@ function renderWidget(
   widgetId: WidgetId,
   policies: Record<PolicyKey, boolean>,
   onTogglePolicy: (policyKey: PolicyKey) => void,
+  setActiveTab: (tab: string) => void,
 ) {
   switch (widgetId) {
     case 'activeUsers':
       return <ActiveUsersWidget />
     case 'riskUsers':
-      return <RiskUsersWidget />
+      return <RiskUsersWidget setActiveTab={setActiveTab} />
     case 'alertFeed':
-      return <AlertFeedWidget />
+      return <AlertFeedWidget setActiveTab={setActiveTab} />
     case 'hourlyTrend':
       return <HourlyTrendWidget />
     case 'sessionTable':
@@ -894,7 +1066,7 @@ function MetricItem({
   )
 }
 
-function RiskUsersWidget() {
+function RiskUsersWidget({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
   return (
     <div className="widget-stack">
       {riskUsers.map((user) => (
@@ -911,7 +1083,7 @@ function RiskUsersWidget() {
           </div>
           <div className="risk-row__footer">
             <span>위험도 {user.riskScore}</span>
-            <button type="button">상세 보기</button>
+            <button type="button" onClick={() => setActiveTab?.('members')}>상세 보기</button>
           </div>
         </article>
       ))}
@@ -919,7 +1091,7 @@ function RiskUsersWidget() {
   )
 }
 
-function AlertFeedWidget() {
+function AlertFeedWidget({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
   return (
     <div className="widget-stack">
       {alertItems.map((item, index) => (
@@ -936,7 +1108,7 @@ function AlertFeedWidget() {
           <p className="feed-row__note">{item.note}</p>
           <div className="feed-row__meta">
             <span>{item.time}</span>
-            <button type="button">이벤트 열기</button>
+            <button type="button" onClick={() => setActiveTab?.('alerts')}>이벤트 열기</button>
           </div>
         </article>
       ))}
@@ -1067,7 +1239,7 @@ function PolicyCenterWidget({
           최근 저장
           <strong>2분 전</strong>
         </div>
-        <button type="button" className="policy-footer__button">
+        <button type="button" className="policy-footer__button" onClick={() => alert('정책이 성공적으로 저장되었습니다.')}>
           정책 저장
         </button>
       </div>
@@ -1076,3 +1248,4 @@ function PolicyCenterWidget({
 }
 
 export default App
+
