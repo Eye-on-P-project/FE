@@ -2,10 +2,11 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
   BellRing,
-  Building2,
   ChevronRight,
   Clock3,
   LayoutDashboard,
+  Lock,
+  LogOut,
   Move,
   RotateCcw,
   Search,
@@ -179,8 +180,6 @@ const defaultLayouts: ResponsiveLayouts = {
   ],
 }
 
-const organizations = ['HANSUNG DEMO ORG', 'FLEET TEAM 07', 'STUDY LAB A']
-
 const alertItems: AlertItem[] = [
   {
     user: '김민수',
@@ -351,6 +350,110 @@ function readStoredVisibleWidgets(): WidgetId[] {
   }
 }
 
+function LoginPage({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    // 임시로 아무거나 적어도 로그인 성공
+    onLogin()
+  }
+
+  return (
+    <div style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      minHeight: '100vh', 
+      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+      padding: '20px'
+    }}>
+      <div style={{ 
+        background: 'white', 
+        padding: '40px', 
+        borderRadius: '16px', 
+        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+        width: '100%',
+        maxWidth: '400px'
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <div style={{ 
+            width: '64px', 
+            height: '64px', 
+            background: 'var(--color-brand, #0f3d3e)', 
+            borderRadius: '16px', 
+            display: 'inline-flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            marginBottom: '16px',
+            color: 'white'
+          }}>
+            <Lock size={32} />
+          </div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 8px 0' }}>관리자 로그인</h1>
+          <p style={{ color: 'var(--color-muted)', fontSize: '0.9rem' }}>Eye-on 관제 시스템에 접속합니다.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>이메일</label>
+            <input 
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              style={{ 
+                width: '100%', 
+                padding: '12px 16px', 
+                borderRadius: '8px', 
+                border: '1px solid var(--color-border)',
+                background: '#f9fafb'
+              }}
+              required
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>비밀번호</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              style={{ 
+                width: '100%', 
+                padding: '12px 16px', 
+                borderRadius: '8px', 
+                border: '1px solid var(--color-border)',
+                background: '#f9fafb'
+              }}
+              required
+            />
+          </div>
+          <button 
+            type="submit" 
+            className="ghost-button" 
+            style={{ 
+              width: '100%', 
+              background: 'var(--color-brand, #0f3d3e)', 
+              color: 'white', 
+              fontWeight: 600,
+              height: '3.5rem',
+              marginTop: '12px'
+            }}
+          >
+            로그인
+          </button>
+        </form>
+        
+        <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--color-muted)' }}>
+          계정 정보를 잊으셨나요? <a href="#" onClick={(e) => { e.preventDefault(); alert('관리자에게 문의하세요.'); }} style={{ color: 'var(--color-brand)', fontWeight: 600 }}>문의하기</a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [editMode, setEditMode] = useState(false)
@@ -358,9 +461,7 @@ function App() {
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(
     readStoredVisibleWidgets,
   )
-  const [selectedOrganization, setSelectedOrganization] = useState(
-    organizations[0],
-  )
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [policies, setPolicies] = useState<Record<PolicyKey, boolean>>({
     stage1: true,
     stage2: true,
@@ -511,6 +612,10 @@ function App() {
     window.localStorage.removeItem(VISIBLE_STORAGE_KEY)
   }
 
+  if (!isLoggedIn) {
+    return <LoginPage onLogin={() => setIsLoggedIn(true)} />
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -537,6 +642,17 @@ function App() {
               <ChevronRight size={14} />
             </button>
           ))}
+          <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--color-border)' }}>
+            <button
+              type="button"
+              className="sidebar__nav-item"
+              onClick={() => setIsLoggedIn(false)}
+              style={{ color: '#d95d39' }}
+            >
+              <LogOut size={18} />
+              <span>로그아웃</span>
+            </button>
+          </div>
         </nav>
 
 
@@ -556,21 +672,6 @@ function App() {
               </div>
 
               <div className="topbar__controls">
-                <label className="select-field">
-                  <Building2 size={16} />
-                  <select
-                    aria-label="조직 선택"
-                    value={selectedOrganization}
-                    onChange={(event) => setSelectedOrganization(event.target.value)}
-                  >
-                    {organizations.map((organization) => (
-                      <option key={organization} value={organization}>
-                        {organization}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
                 <button
                   type="button"
                   className={`ghost-button${editMode ? ' is-active' : ''}`}
@@ -618,7 +719,7 @@ function App() {
               <div className="board-section__header">
                 <div>
                   <p className="eyebrow">Workspace Board</p>
-                  <h2>{selectedOrganization}</h2>
+                  <h2>전체 조직</h2>
                 </div>
                 <div className="board-section__meta">
                   <span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span>
@@ -695,28 +796,13 @@ function App() {
                   상세 세션 로그를 통해 체계적인 인원 관리를 지원합니다.
                 </p>
               </div>
-              <div className="topbar__controls">
-                <label className="select-field">
-                  <Building2 size={16} />
-                  <select
-                    aria-label="조직 선택"
-                    value={selectedOrganization}
-                    onChange={(event) => setSelectedOrganization(event.target.value)}
-                  >
-                    {organizations.map((organization) => (
-                      <option key={organization} value={organization}>
-                        {organization}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+
             </header>
             <section className="board-section">
               <div className="board-section__header">
                 <div>
                   <p className="eyebrow">Directory</p>
-                  <h2>{selectedOrganization} 구성원 목록</h2>
+                  <h2>전체 조직 세부 정책</h2>
                 </div>
                 <div className="search-strip" style={{ marginBottom: 0 }}>
                   <div className="search-strip__input">
@@ -834,28 +920,12 @@ function App() {
                     과거 이력 조회 및 정밀한 분석 데이터를 제공합니다.
                   </p>
                 </div>
-                <div className="topbar__controls">
-                  <label className="select-field">
-                    <Building2 size={16} />
-                    <select
-                      aria-label="조직 선택"
-                      value={selectedOrganization}
-                      onChange={(event) => setSelectedOrganization(event.target.value)}
-                    >
-                      {organizations.map((organization) => (
-                        <option key={organization} value={organization}>
-                          {organization}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
               </header>
               <section className="board-section">
                 <div className="board-section__header">
                   <div>
                     <p className="eyebrow">Event Log</p>
-                    <h2>{selectedOrganization} 전체 이벤트</h2>
+                    <h2>전체 조직 세부 정책</h2>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="button" className="ghost-button" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => {
@@ -1057,22 +1127,6 @@ function App() {
                     안전 정책 수립을 위한 핵심 인사이트를 제공합니다.
                   </p>
                 </div>
-                <div className="topbar__controls">
-                  <label className="select-field">
-                    <Building2 size={16} />
-                    <select
-                      aria-label="조직 선택"
-                      value={selectedOrganization}
-                      onChange={(event) => setSelectedOrganization(event.target.value)}
-                    >
-                      {organizations.map((organization) => (
-                        <option key={organization} value={organization}>
-                          {organization}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
               </header>
               
               <section className="board-section">
@@ -1167,28 +1221,13 @@ function App() {
                   조직 환경에 최적화된 맞춤형 안전 가이드라인을 수립합니다.
                 </p>
               </div>
-              <div className="topbar__controls">
-                <label className="select-field">
-                  <Building2 size={16} />
-                  <select
-                    aria-label="조직 선택"
-                    value={selectedOrganization}
-                    onChange={(event) => setSelectedOrganization(event.target.value)}
-                  >
-                    {organizations.map((organization) => (
-                      <option key={organization} value={organization}>
-                        {organization}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+
             </header>
             <section className="board-section">
               <div className="board-section__header">
                 <div>
                   <p className="eyebrow">Global Settings</p>
-                  <h2>{selectedOrganization} 세부 정책</h2>
+                  <h2>전체 조직 세부 정책</h2>
                 </div>
                 <button type="button" className="ghost-button" style={{ background: 'var(--color-fg)', color: 'var(--color-bg)' }}>
                   변경 사항 저장
