@@ -11,8 +11,8 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
-  ShieldCheck,
   SquarePen,
+  UserCircle,
   Users,
   Wifi,
   type LucideIcon,
@@ -67,14 +67,11 @@ type SessionRow = {
   startTime: string
   duration: string
   alerts: string
-  sync: '동기화 완료' | '재시도 필요'
 }
 
 type WidgetMeta = {
   id: WidgetId
   title: string
-  eyebrow: string
-  summary: string
 }
 
 const navigationItems: NavigationItem[] = [
@@ -82,7 +79,6 @@ const navigationItems: NavigationItem[] = [
   { id: 'members', label: '구성원', icon: Users },
   { id: 'alerts', label: '알림', icon: BellRing },
   { id: 'statistics', label: '통계', icon: Activity },
-  { id: 'policies', label: '설정', icon: ShieldCheck },
 ]
 
 const widgetOrder: WidgetId[] = [
@@ -97,32 +93,22 @@ const widgetMeta: Record<WidgetId, WidgetMeta> = {
   activeUsers: {
     id: 'activeUsers',
     title: '실시간 현황',
-    eyebrow: 'Live Overview',
-    summary: '전체 구성원 상태 요약',
   },
   riskUsers: {
     id: 'riskUsers',
     title: '위험 사용자 큐',
-    eyebrow: 'Risk Queue',
-    summary: '위험도 순 정렬 리스트',
   },
   alertFeed: {
     id: 'alertFeed',
     title: '실시간 알림',
-    eyebrow: 'Alert Feed',
-    summary: '최근 발생한 위험 감지 알림',
   },
   hourlyTrend: {
     id: 'hourlyTrend',
     title: '졸음 발생 추이',
-    eyebrow: 'Hourly Trend',
-    summary: '시간대별 알림 발생 분포',
   },
   sessionTable: {
     id: 'sessionTable',
     title: '최근 접속 세션',
-    eyebrow: 'Session Log',
-    summary: '전체 사용자 접속 기록',
   },
 }
 
@@ -216,8 +202,7 @@ const sessionRows: SessionRow[] = [
       date: `2026-04-${String(11 - Math.floor(idx/3)).padStart(2, '0')}`,
       startTime: `${String(8 + (idx % 8) * 2).padStart(2, '0')}:15`,
       duration: `${1 + (idx % 3)}h ${10 + (idx * 5) % 45}m`,
-      alerts: idx % 4 === 0 ? 'L1 2회 / L2 1회' : idx % 7 === 0 ? 'L2 1회' : '정상',
-      sync: '동기화 완료' as const
+      alerts: idx % 4 === 0 ? '졸음 2회 / 수면 1회' : idx % 7 === 0 ? '수면 1회' : '정상'
     }))
   )
 ]
@@ -266,7 +251,6 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <div style={{ width: '64px', height: '64px', background: '#0f3d3e', borderRadius: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', color: 'white' }}><Lock size={32} /></div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 8px 0' }}>{isLoginMode ? '관리자 로그인' : '조직 관리자 회원가입'}</h1>
-          <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>{isLoginMode ? 'Eye-on 관제 시스템에 접속합니다.' : '신규 조직 관리자 계정을 생성합니다.'}</p>
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>이메일</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb' }} required /></div>
@@ -295,6 +279,7 @@ function App() {
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
   const [statStartDate, setStatStartDate] = useState('2026-04-04')
   const [statEndDate, setStatEndDate] = useState('2026-04-11')
+  
   const getWeekStr = (dateStr: string) => {
     const date = new Date(dateStr); const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())); const dayNum = d.getUTCDay() || 7
     d.setUTCDate(d.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
@@ -304,10 +289,14 @@ function App() {
     const date = new Date(dateStr); const year = date.getFullYear(); const month = date.getMonth() + 1; const day = date.getDate(); const firstDay = new Date(year, date.getMonth(), 1).getDay()
     return `${year}-${month}월 ${Math.ceil((day + (firstDay === 0 ? 6 : firstDay - 1)) / 7)}주차`
   }
+  
   const [alertFilterStartDate, setAlertFilterStartDate] = useState('2026-04-04'); const [alertFilterEndDate, setAlertFilterEndDate] = useState('2026-04-11'); const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all'); const [selectedStatGroup, setSelectedStatGroup] = useState<{ key: string, items: AlertItem[] } | null>(null)
+  
   useEffect(() => { window.localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(layouts)) }, [layouts])
   useEffect(() => { window.localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(visibleWidgets)) }, [visibleWidgets])
+  
   const hiddenCount = widgetOrder.length - visibleWidgets.length
+  
   function handleLayoutChange(_currentLayout: Layout, allLayouts: ResponsiveLayouts) {
     setLayouts((prevLayouts) => {
       const updatedLayouts = { ...prevLayouts }
@@ -321,6 +310,7 @@ function App() {
       }); return updatedLayouts
     })
   }
+  
   function toggleWidget(widgetId: WidgetId) {
     setVisibleWidgets((currentWidgets) => {
       if (!currentWidgets.includes(widgetId)) {
@@ -334,34 +324,48 @@ function App() {
       if (currentWidgets.length === 1) return currentWidgets; return currentWidgets.filter(id => id !== widgetId)
     })
   }
+  
   function resetBoard() { setLayouts(defaultLayouts); setVisibleWidgets(widgetOrder); window.localStorage.removeItem(LAYOUTS_STORAGE_KEY); window.localStorage.removeItem(VISIBLE_STORAGE_KEY) }
+  
   if (!isLoggedIn) return <LoginPage onLogin={() => setIsLoggedIn(true)} />
+  
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar__brand"><div className="sidebar__badge"><ShieldAlert size={18} /></div><div><p className="eyebrow">Eye:on Admin</p><strong>Monitoring Console</strong></div></div>
+        <div className="sidebar__brand">
+          <div className="sidebar__badge"><ShieldAlert size={18} /></div>
+          <div><strong>Eye:on Admin</strong></div>
+        </div>
         <nav className="sidebar__nav">
           {navigationItems.map(({ id, label, icon: Icon }) => (
-            <button key={id} type="button" className={`sidebar__nav-item${activeTab === id ? ' is-active' : ''}`} onClick={() => setActiveTab(id)}><Icon size={18} /><span>{label}</span><ChevronRight size={14} /></button>
+            <button key={id} type="button" className={`sidebar__nav-item${activeTab === id ? ' is-active' : ''}`} onClick={() => setActiveTab(id)}>
+              <Icon size={18} /><span>{label}</span><ChevronRight size={14} />
+            </button>
           ))}
           <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
-            <button type="button" className="sidebar__nav-item" onClick={() => setIsLoggedIn(false)} style={{ color: '#d95d39' }}><LogOut size={18} /><span>로그아웃</span></button>
+            <button type="button" className={`sidebar__nav-item${activeTab === 'account' ? ' is-active' : ''}`} onClick={() => setActiveTab('account')}>
+              <UserCircle size={18} /><span>계정</span><ChevronRight size={14} />
+            </button>
           </div>
         </nav>
       </aside>
+      
       <main className="workspace">
         {activeTab === 'dashboard' && (
           <>
-            <header className="topbar"><div className="topbar__copy"><p className="eyebrow">Real-time Monitoring</p><h1>통합 관제 대시보드</h1><p className="topbar__description">실시간 위험 사용자 탐지, 세션 분석 및 계정 보안 설정을 통합하여 조직의 안전과 효율성을 한눈에 관리할 수 있습니다.</p></div>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <h1>통합 관제 대시보드</h1>
+              </div>
               <div className="topbar__controls"><button type="button" className={`ghost-button${editMode ? ' is-active' : ''}`} onClick={() => setEditMode(!editMode)}><SquarePen size={16} />{editMode ? '편집 종료' : '편집 모드'}</button><button type="button" className="ghost-button" onClick={resetBoard}><RotateCcw size={16} />레이아웃 초기화</button></div>
             </header>
             <section className="hero-strip">
               <SummaryCard icon={Wifi} label="현재 활성 사용자" value={riskUsers.length.toString()} detail="전체 등록 인원 기준" />
               <SummaryCard icon={ShieldAlert} label="오늘 위험 사용자" value={riskUsers.filter(u => u.riskScore > 70).length.toString()} detail="누적 위험도 70점 이상" />
-              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`L1 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / L2 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
+              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
             </section>
             <section className="board-section">
-              <div className="board-section__header"><div><p className="eyebrow">Workspace Board</p><h2>전체 조직</h2></div><div className="board-section__meta"><span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span><span>{hiddenCount > 0 ? `숨김 ${hiddenCount}개` : '전체 표시 중'}</span></div></div>
+              <div className="board-section__header"><div><h2>전체 조직</h2></div><div className="board-section__meta"><span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span><span>{hiddenCount > 0 ? `숨김 ${hiddenCount}개` : '전체 표시 중'}</span></div></div>
               {editMode && (<section className="widget-library">{widgetOrder.map((id) => (<button key={id} type="button" className={`widget-library__chip${visibleWidgets.includes(id) ? ' is-on' : ''}`} onClick={() => toggleWidget(id)}><span>{widgetMeta[id].title}</span><small>{visibleWidgets.includes(id) ? '표시 중' : '숨김'}</small></button>))}</section>)}
               <ResponsiveGridLayout className={`workspace-board${editMode ? ' is-editing' : ''}`} layouts={layouts} breakpoints={{ lg: 1000, md: 800, sm: 640, xs: 480, xxs: 0 }} cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }} rowHeight={40} margin={[16, 16]} containerPadding={[0, 0]} draggableHandle=".widget-shell__header" isDraggable={editMode} isResizable={editMode} onLayoutChange={handleLayoutChange}>
                 {visibleWidgets.map((id) => (<div key={id} data-grid={defaultLayouts.lg?.find(l => l.i === id)}><WidgetShell meta={widgetMeta[id]} editMode={editMode}>{renderWidget(id, setActiveTab, (name) => { setActiveTab('members'); setSelectedUserForDetail(name); }, riskUsers)}</WidgetShell></div>))}
@@ -369,11 +373,16 @@ function App() {
             </section>
           </>
         )}
+        
         {activeTab === 'members' && (
           <>
-            <header className="topbar"><div className="topbar__copy"><p className="eyebrow">Organization Roster</p><h1>구성원 관리 시스템</h1><p className="topbar__description">조직 구성원의 실시간 활동 현황과 위험도 이력을 조회하고, 상세 세션 로그를 통해 체계적인 인원 관리를 지원합니다.</p></div></header>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <h1>구성원 관리 시스템</h1>
+              </div>
+            </header>
             <section className="board-section">
-              <div className="board-section__header"><div><p className="eyebrow">Directory</p><h2>전체 조직 구성원 목록</h2></div>
+              <div className="board-section__header"><div><h2>전체 조직 구성원 목록</h2></div>
                 <div className="search-strip" style={{ marginBottom: 0 }}>
                   <div className="search-strip__input"><Search size={16} /><input type="text" placeholder="이름 또는 부서 검색" value={memberSearchQuery} onChange={e => setMemberSearchQuery(e.target.value)} style={{ background: 'transparent', border: 'none', outline: 'none', color: 'inherit', width: '100%' }} /></div>
                   <button type="button" className="ghost-button" style={{ background: '#0f3d3e', color: 'white', fontWeight: 600 }} onClick={() => setIsAddMemberModalOpen(true)}>구성원 추가</button>
@@ -381,13 +390,12 @@ function App() {
               </div>
               <div className="table-shell">
                 <table>
-                  <thead><tr><th>사용자</th><th>소속</th><th>금일 세션 수</th><th>최근 위험도 점수</th><th>상태</th><th>관리</th></tr></thead>
+                  <thead><tr><th>사용자</th><th>소속</th><th>금일 세션 수</th><th>최근 위험도 점수</th><th>관리</th></tr></thead>
                   <tbody>
                     {riskUsers.filter(u => u.name.includes(memberSearchQuery) || u.team.includes(memberSearchQuery)).map((user) => (
                       <tr key={user.name}>
                         <td><strong>{user.name}</strong></td><td>{user.team}</td><td>{user.sessionsToday}회</td>
                         <td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '30px' }}>{user.riskScore}</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${user.riskScore}%`, height: '100%', background: user.riskScore > 80 ? '#ef4444' : user.riskScore > 60 ? '#f59e0b' : '#10b981' }} /></div></div></td>
-                        <td><span className="sync-badge is-good">활성</span></td>
                         <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail(user.name)}>상세 정보</button></td>
                       </tr>
                     ))}
@@ -397,21 +405,26 @@ function App() {
             </section>
           </>
         )}
+        
         {activeTab === 'alerts' && (() => {
           const filtered = alertItems.filter(item => {
             const time = new Date(item.date).getTime(); const start = new Date(alertFilterStartDate).getTime(); const end = new Date(alertFilterEndDate).getTime()
             if (time < start || time > end) return false; if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) return false; return true
           })
           const handleExport = () => {
-            const headers = ['날짜', '발생 시간', '사용자', '소속', '경고 단계', '상세 내용']; const rows = filtered.map(a => [a.date, a.time, a.user, a.team, a.level, a.note])
+            const headers = ['날짜', '발생 시간', '사용자', '소속', '알림 단계', '상세 내용']; const rows = filtered.map(a => [a.date, a.time, a.user, a.team, a.level, a.note])
             const csv = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n"); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
             const link = document.createElement("a"); link.href = url; link.download = `alerts_${alertFilterStartDate}.csv`; link.click()
           }
           return (
             <>
-              <header className="topbar"><div className="topbar__copy"><p className="eyebrow">Alert History</p><h1>졸음 및 위험 감지 로그</h1><p className="topbar__description">시스템에 의해 감지된 모든 위험 알림을 실시간으로 기록하며, 과거 이력 조회 및 정밀한 분석 데이터를 제공합니다.</p></div></header>
+              <header className="topbar">
+                <div className="topbar__copy">
+                  <h1>졸음 및 위험 감지 로그</h1>
+                </div>
+              </header>
               <section className="board-section">
-                <div className="board-section__header"><div><p className="eyebrow">Alert Log</p><h2>전체 조직 알림 로그</h2></div>
+                <div className="board-section__header"><div><h2>전체 조직 알림 로그</h2></div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="button" className="ghost-button" onClick={() => { setAlertFilterStartDate('2026-04-11'); setAlertFilterEndDate('2026-04-11'); }}>오늘</button>
                     <button type="button" className="ghost-button" onClick={() => { setAlertFilterStartDate('2026-04-04'); setAlertFilterEndDate('2026-04-11'); }}>최근 7일</button>
@@ -421,14 +434,15 @@ function App() {
                 </div>
                 <div className="search-strip" style={{ padding: '12px 0', gap: '16px', borderBottom: '1px solid #e5e7eb' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><label style={{ fontSize: '0.9rem', fontWeight: 500 }}>조회 기간:</label><input type="date" value={alertFilterStartDate} onChange={e => setAlertFilterStartDate(e.target.value)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }} /><span>~</span><input type="date" value={alertFilterEndDate} onChange={e => setAlertFilterEndDate(e.target.value)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }} /></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><label style={{ fontSize: '0.9rem', fontWeight: 500 }}>단계:</label><select value={alertFilterLevel} onChange={e => setAlertFilterLevel(e.target.value as any)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}><option value="all">모든 단계</option><option value="L1">L1 주의</option><option value="L2">L2 경고</option></select></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><label style={{ fontSize: '0.9rem', fontWeight: 500 }}>단계:</label><select value={alertFilterLevel} onChange={e => setAlertFilterLevel(e.target.value as any)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}><option value="all">모든 단계</option><option value="L1">졸음</option><option value="L2">수면</option></select></div>
                   <button type="button" className="ghost-button" style={{ marginLeft: 'auto', background: '#eee', color: '#000', fontWeight: 600 }} onClick={handleExport}>내보내기 (CSV)</button>
                 </div>
-                <div className="table-shell"><table><thead><tr><th>날짜</th><th>발생 시간</th><th>사용자</th><th>소속</th><th>경고 단계</th><th>상세 내용</th><th>조치 상태</th></tr></thead><tbody>{filtered.length > 0 ? filtered.map((item, i) => (<tr key={i}><td>{item.date}</td><td>{item.time}</td><td><strong>{item.user}</strong></td><td>{item.team}</td><td><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level}</span></td><td>{item.note}</td><td>{item.level === 'L2' ? <span className="sync-badge is-bad">확인 필요</span> : <span className="sync-badge is-good">자동 종료됨</span>}</td></tr>)) : <tr><td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: '#6b7280' }}>해당 조건에 맞는 알림이 없습니다.</td></tr>}</tbody></table></div>
+                <div className="table-shell"><table><thead><tr><th>날짜</th><th>발생 시간</th><th>사용자</th><th>소속</th><th>알림 단계</th><th>상세 내용</th></tr></thead><tbody>{filtered.length > 0 ? filtered.map((item, i) => (<tr key={i}><td>{item.date}</td><td>{item.time}</td><td><strong>{item.user}</strong></td><td>{item.team}</td><td><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span></td><td>{item.note}</td></tr>)) : <tr><td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#6b7280' }}>해당 조건에 맞는 알림이 없습니다.</td></tr>}</tbody></table></div>
               </section>
             </>
           )
         })()}
+        
         {activeTab === 'statistics' && (() => {
           const filtered = alertItems.filter(item => {
             if (statType === 'hourly' || statType === 'daily') { const t = new Date(item.date).getTime(); return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime()) }
@@ -450,9 +464,13 @@ function App() {
           const statResult = Object.values(grouped).sort((a: any, b: any) => b.key.localeCompare(a.key)); const statMax = Math.max(...statResult.map((r: any) => r.total), 1)
           return (
             <>
-              <header className="topbar"><div className="topbar__copy"><p className="eyebrow">Statistics & Trends</p><h1>졸음 발생 패턴 및 통계 분석</h1><p className="topbar__description">시간대별, 기간별 다각도 통계 데이터를 통해 조직 내 졸음 취약 구간 파악 및 인사이트를 제공합니다.</p></div></header>
+              <header className="topbar">
+                <div className="topbar__copy">
+                  <h1>졸음 발생 패턴 및 통계 분석</h1>
+                </div>
+              </header>
               <section className="board-section">
-                <div className="board-section__header"><div><p className="eyebrow">Data Table</p><h2>상세 통계 데이터</h2></div>
+                <div className="board-section__header"><div><h2>상세 통계 데이터</h2></div>
                   <div className="search-strip" style={{ background: 'none', border: 'none', padding: 0 }}>
                     <button type="button" className={`ghost-button${statType === 'hourly' ? ' is-active' : ''}`} onClick={() => { setStatType('hourly'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>시간대</button>
                     <button type="button" className={`ghost-button${statType === 'daily' ? ' is-active' : ''}`} onClick={() => { setStatType('daily'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>일</button>
@@ -473,17 +491,22 @@ function App() {
                     <button type="button" className="ghost-button" style={{ background: '#eee', color: '#000', fontWeight: 600 }}>적용</button>
                     <button type="button" className="ghost-button" onClick={() => { setStatType('hourly'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>초기화</button>
                   </div>
-                  {statResult.length > 0 ? (<div className="table-shell"><table><thead><tr><th>기준</th><th>총 알림 수</th><th>L1 주의</th><th>L2 경고</th><th>발생 비율</th><th>관리</th></tr></thead><tbody>{statResult.map((row: any) => { const p = Math.round((row.total / statMax) * 100); return <tr key={row.key}><td>{row.key}</td><td><strong>{row.total}건</strong></td><td>{row.l1}건</td><td>{row.l2}건</td><td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '40px' }}>{p}%</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${p}%`, height: '100%', background: p > 50 ? '#ef4444' : '#f59e0b' }} /></div></div></td><td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedStatGroup({ key: row.key, items: row.items })}>알림 확인</button></td></tr> })}</tbody></table></div>) : <div style={{ padding: '32px', textAlign: 'center', background: '#f9fafb', color: '#6b7280' }}>조건에 맞는 데이터가 없습니다.</div>}
+                  {statResult.length > 0 ? (<div className="table-shell"><table><thead><tr><th>기준</th><th>총 알림 수</th><th>졸음</th><th>수면</th><th>발생 비율</th><th>관리</th></tr></thead><tbody>{statResult.map((row: any) => { const p = Math.round((row.total / statMax) * 100); return <tr key={row.key}><td>{row.key}</td><td><strong>{row.total}건</strong></td><td>{row.l1}건</td><td>{row.l2}건</td><td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '40px' }}>{p}%</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${p}%`, height: '100%', background: p > 50 ? '#ef4444' : '#f59e0b' }} /></div></div></td><td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedStatGroup({ key: row.key, items: row.items })}>알림 확인</button></td></tr> })}</tbody></table></div>) : <div style={{ padding: '32px', textAlign: 'center', background: '#f9fafb', color: '#6b7280' }}>조건에 맞는 데이터가 없습니다.</div>}
                 </div>
               </section>
             </>
           )
         })()}
-        {activeTab === 'policies' && (
+        
+        {activeTab === 'account' && (
           <>
-            <header className="topbar"><div className="topbar__copy"><p className="eyebrow">Settings</p><h1>시스템 설정</h1><p className="topbar__description">관리자 계정의 비밀번호 변경 등 시스템의 기본 설정을 관리합니다.</p></div></header>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <h1>계정 설정</h1>
+              </div>
+            </header>
             <section className="board-section">
-              <div className="board-section__header"><div><p className="eyebrow">Account Security</p><h2>계정 보안 설정</h2></div></div>
+              <div className="board-section__header"><div><h2>계정 보안 및 접근 제어</h2></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginTop: '16px' }}>
                 <div className="widget-stack" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
                   <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>비밀번호 변경</h3>
@@ -494,17 +517,26 @@ function App() {
                     <button type="submit" className="ghost-button" style={{ background: '#0f3d3e', color: 'white', fontWeight: 600, height: '3rem' }}>변경 저장</button>
                   </form>
                 </div>
+
+                <div className="widget-stack" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', height: 'fit-content' }}>
+                  <h3 style={{ marginBottom: '16px', fontSize: '1.1rem', color: '#d95d39' }}>시스템 로그아웃</h3>
+                  <button type="button" className="ghost-button" onClick={() => setIsLoggedIn(false)} style={{ color: '#d95d39', border: '1px solid #d95d39', fontWeight: 600, height: '3rem', width: '100%', justifyContent: 'center' }}>
+                    <LogOut size={18} style={{ marginRight: '8px' }} /> 로그아웃
+                  </button>
+                </div>
               </div>
             </section>
           </>
         )}
       </main>
+      
       {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} riskUsers={riskUsers} onClose={() => setSelectedUserForDetail(null)} onDelete={() => { setRiskUsers(prev => prev.filter(u => u.name !== selectedUserForDetail)); setSelectedUserForDetail(null); }} onUpdate={(newTeam) => { setRiskUsers(prev => prev.map(u => u.name === selectedUserForDetail ? { ...u, team: newTeam } : u)); }} />}
       {selectedStatGroup && <StatEventModal groupKey={selectedStatGroup.key} items={selectedStatGroup.items} onClose={() => setSelectedStatGroup(null)} />}
       {isAddMemberModalOpen && <AddMemberModal onAdd={(email, team) => setRiskUsers(prev => [...prev, { name: email.split('@')[0], team, riskScore: 0, sessionsToday: 0 }])} onClose={() => setIsAddMemberModalOpen(false)} />}
     </div>
   )
 }
+
 function renderWidget(id: WidgetId, setActiveTab: (tab: string) => void, onShow: (name: string) => void, riskUsers: RiskUser[]) {
   switch (id) {
     case 'activeUsers': return <ActiveUsersWidget riskUsers={riskUsers} />
@@ -515,64 +547,73 @@ function renderWidget(id: WidgetId, setActiveTab: (tab: string) => void, onShow:
     default: return null
   }
 }
+
 function SummaryCard({ icon: Icon, label, value, detail }: { icon: LucideIcon, label: string, value: string, detail: string }) {
   return (<article className="summary-card"><div className="summary-card__icon"><Icon size={24} /></div><div><p className="summary-card__label">{label}</p><strong className="summary-card__value">{value}</strong><p className="summary-card__detail">{detail}</p></div></article>)
 }
+
 function WidgetShell({ meta, editMode, children }: { meta: WidgetMeta, editMode: boolean, children: ReactNode }) {
   if (!meta) return null
-  return (<section className="widget-shell"><header className="widget-shell__header" style={{ cursor: editMode ? 'grab' : 'default' }}><div><p className="eyebrow">{meta.eyebrow}</p><h3>{meta.title}</h3><p className="widget-shell__summary">{meta.summary}</p></div>{editMode && <div className="widget-shell__edit-pill"><Move size={14} />이동</div>}</header><div className="widget-shell__body">{children}</div></section>)
+  return (<section className="widget-shell"><header className="widget-shell__header" style={{ cursor: editMode ? 'grab' : 'default' }}><div><h3>{meta.title}</h3></div>{editMode && <div className="widget-shell__edit-pill"><Move size={14} />이동</div>}</header><div className="widget-shell__body">{children}</div></section>)
 }
+
 function ActiveUsersWidget({ riskUsers }: { riskUsers: RiskUser[] }) {
   const highRisk = riskUsers.filter(u => u.riskScore > 80).length
   const caution = riskUsers.filter(u => u.riskScore > 50 && u.riskScore <= 80).length
   const normal = riskUsers.length - highRisk - caution
   return (<div className="widget-stack"><div className="hero-stat"><div><p className="hero-stat__label">조직 전체 등록 인원</p><strong className="hero-stat__value">{riskUsers.length}</strong></div><div className="hero-stat__badge">+2 from 1h ago</div></div>
-    <div className="metric-grid"><MetricItem label="정상 상태" value={normal.toString()} tone="emerald" /><MetricItem label="주의 필요" value={caution.toString()} tone="sand" /><MetricItem label="고위험군" value={highRisk.toString()} tone="blue" /></div>
-    <div className="mini-panel"><div className="mini-panel__row"><span>오늘 실시간 접속</span><strong>{Math.floor(riskUsers.length * 0.6)}</strong></div><div className="mini-panel__row"><span>동기화 보류 세션</span><strong>2</strong></div></div></div>)
+    <div className="metric-grid"><MetricItem label="정상" value={normal.toString()} tone="emerald" /><MetricItem label="졸음" value={caution.toString()} tone="sand" /><MetricItem label="수면" value={highRisk.toString()} tone="blue" /></div>
+    <div className="mini-panel"><div className="mini-panel__row"><span>오늘 신규 가입</span><strong>+18</strong></div><div className="mini-panel__row"><span>실시간 경고</span><strong>2</strong></div></div></div>)
 }
+
 function MetricItem({ label, value, tone }: { label: string, value: string, tone: 'blue' | 'sand' | 'emerald' }) { return (<div className={`metric-item metric-item--${tone}`}><span>{label}</span><strong>{value}</strong></div>) }
+
 function RiskUsersWidget({ onShowUserDetail, riskUsers }: { onShowUserDetail?: (name: string) => void, riskUsers: RiskUser[] }) {
   const sorted = [...riskUsers].sort((a, b) => b.riskScore - a.riskScore)
   return (<div className="widget-stack">{sorted.map(user => (<article key={user.name} className="risk-row"><div className="risk-row__copy"><div><strong>{user.name}</strong><span>{user.team}</span></div><span className="risk-row__sessions">{user.sessionsToday}세션</span></div><div className="risk-row__bar"><div style={{ width: `${user.riskScore}%`, background: user.riskScore > 80 ? '#ef4444' : user.riskScore > 60 ? '#f59e0b' : '#10b981' }} /></div><div className="risk-row__footer"><span>위험도 {user.riskScore}</span><button type="button" onClick={() => onShowUserDetail?.(user.name)}>상세 보기</button></div></article>))}</div>)
 }
+
 function AlertFeedWidget({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
   const [filter, setFilter] = useState<'all' | 'L1' | 'L2'>('all'); const filtered = alertItems.filter(i => filter === 'all' ? true : i.level === filter)
   return (<div className="widget-stack" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', padding: '0 16px' }}>{(['all', 'L1', 'L2'] as const).map(l => <button key={l} type="button" className={`ghost-button${filter === l ? ' is-active' : ''}`} style={{ flex: 1, padding: '6px' }} onClick={() => setFilter(l)}>{l === 'all' ? '전체' : l + (l === 'L1' ? ' 주의' : ' 경고')}</button>)}</div>
+    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', padding: '0 16px' }}>{(['all', 'L1', 'L2'] as const).map(l => <button key={l} type="button" className={`ghost-button${filter === l ? ' is-active' : ''}`} style={{ flex: 1, padding: '6px' }} onClick={() => setFilter(l)}>{l === 'all' ? '전체' : (l === 'L1' ? '졸음' : '수면')}</button>)}</div>
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 16px 16px 16px' }}>
       {filtered.length > 0 ? filtered.map((item, index) => (
-        <article key={index} className="feed-row" style={{ margin: 0 }}><div className="feed-row__head"><div><strong>{item.user}</strong><span>{item.team}</span></div><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level}</span></div><p className="feed-row__note">{item.note}</p><div className="feed-row__meta"><span>{item.time}</span><button type="button" onClick={() => setActiveTab?.('alerts')}>알림 열기</button></div></article>
+        <article key={index} className="feed-row" style={{ margin: 0 }}><div className="feed-row__head"><div><strong>{item.user}</strong><span>{item.team}</span></div><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span></div><p className="feed-row__note">{item.note}</p><div className="feed-row__meta"><span>{item.time}</span><button type="button" onClick={() => setActiveTab?.('alerts')}>알림 열기</button></div></article>
       )) : <div style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>해당 등급의 알림이 없습니다.</div>}
     </div></div>)
 }
+
 function HourlyTrendWidget() {
   const total = alertItems.length; const l1 = alertItems.filter(a => a.level === 'L1').length; const l2 = alertItems.filter(a => a.level === 'L2').length
   return (<div className="widget-stack"><div className="chart-header"><div><span>금일 피크 시간</span><strong>22:00</strong></div><div><span>총 누적 알림</span><strong>{total}건</strong></div></div>
     <div className="bar-chart" aria-label="시간대별 졸음 알림 차트">{hourlyTrendData.map(p => (<div key={p.label} className="bar-chart__item"><div className="bar-chart__column"><div style={{ height: `${p.value * 3}px` }} /></div><strong>{p.value}</strong><span>{p.label}</span></div>))}</div>
-    <div className="compare-strip"><div><span>L1 주의 발생</span><strong>{Math.round(l1/total*100)}%</strong></div><div><span>L2 경고 발생</span><strong>{Math.round(l2/total*100)}%</strong></div><div><span>기타 알림</span><strong>0%</strong></div></div></div>)
+    <div className="compare-strip"><div><span>졸음 발생</span><strong>{Math.round(l1/total*100)}%</strong></div><div><span>수면 발생</span><strong>{Math.round(l2/total*100)}%</strong></div><div><span>기타 알림</span><strong>0%</strong></div></div></div>)
 }
+
 function SessionTableWidget() {
   const [query, setQuery] = useState('')
   const filtered = sessionRows.filter(row => row.user.toLowerCase().includes(query.toLowerCase()) || row.alerts.toLowerCase().includes(query.toLowerCase()))
   return (<div className="widget-stack">
     <div className="search-strip">
       <div className="search-strip__input"><Search size={16} /><input type="text" placeholder="사용자 또는 알림 검색" value={query} onChange={e => setQuery(e.target.value)} style={{ background: 'transparent', border: 'none', outline: 'none', color: 'inherit', width: '100%' }} /></div>
-      <button type="button" onClick={() => alert('필터 기능은 준비 중입니다.')}>필터</button>
     </div>
-    <div className="table-shell"><table><thead><tr><th>사용자</th><th>러닝 타임</th><th>알림 요약</th><th>동기화</th></tr></thead><tbody>{filtered.length > 0 ? filtered.map((row, idx) => (<tr key={idx}><td>{row.user}</td><td>{row.duration}</td><td>{row.alerts}</td><td><span className={`sync-badge${row.sync === '동기화 완료' ? ' is-good' : ' is-bad'}`}>{row.sync}</span></td></tr>)) : <tr><td colSpan={4} style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>검색 결과가 없습니다.</td></tr>}</tbody></table></div></div>)
+    <div className="table-shell"><table><thead><tr><th>사용자</th><th>러닝 타임</th><th>알림 요약</th></tr></thead><tbody>{filtered.length > 0 ? filtered.map((row, idx) => (<tr key={idx}><td>{row.user}</td><td>{row.duration}</td><td>{row.alerts}</td></tr>)) : <tr><td colSpan={3} style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>검색 결과가 없습니다.</td></tr>}</tbody></table></div></div>)
 }
+
 function StatEventModal({ groupKey, items, onClose }: { groupKey: string, items: AlertItem[], onClose: () => void }) {
-  return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><p className="eyebrow" style={{ margin: 0 }}>통계 상세 이력</p><h2 style={{ margin: '4px 0 0 0', fontSize: '1.25rem' }}>{groupKey} <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>발생 알림 목록</span></h2></div><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button></header><div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}><div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>발생 시간</th><th>사용자</th><th>소속</th><th>경고 단계</th><th>상세 내용</th></tr></thead><tbody>{items.map((item, i) => (<tr key={i}><td>{item.time}</td><td><strong>{item.user}</strong></td><td>{item.team}</td><td><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level}</span></td><td>{item.note}</td></tr>))}</tbody></table></div></div></div></div>)
+  return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><h2 style={{ margin: '0', fontSize: '1.25rem' }}>{groupKey} <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>발생 알림 목록</span></h2></div><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button></header><div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}><div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>발생 시간</th><th>사용자</th><th>소속</th><th>알림 단계</th><th>상세 내용</th></tr></thead><tbody>{items.map((item, i) => (<tr key={i}><td>{item.time}</td><td><strong>{item.user}</strong></td><td>{item.team}</td><td><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span></td><td>{item.note}</td></tr>))}</tbody></table></div></div></div></div>)
 }
+
 function UserDetailModal({ userName, riskUsers, onClose, onDelete, onUpdate }: { userName: string, riskUsers: RiskUser[], onClose: () => void, onDelete: () => void, onUpdate: (team: string) => void }) {
   const [filterDays, setFilterDays] = useState<number | null>(7); const [editMode, setEditMode] = useState(false); const user = riskUsers.find(u => u.name === userName) || { name: userName, team: '미상', riskScore: 0, sessionsToday: 0 }
   const [newTeam, setNewTeam] = useState(user.team)
   const filterByDate = (date: string) => { if (!filterDays) return true; return (new Date('2026-04-11').getTime() - new Date(date).getTime()) / 86400000 <= filterDays }
   const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date)); const sessions = sessionRows.filter(s => s.user === userName && filterByDate(s.date))
   return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <div><p className="eyebrow" style={{ margin: 0 }}>구성원 상세</p>
-      {editMode ? (<div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><strong style={{ alignSelf: 'center' }}>{user.name}</strong><input value={newTeam} onChange={e => setNewTeam(e.target.value)} placeholder="신규 소속" style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #e5e7eb' }} /></div>) 
-      : (<h2 style={{ margin: '4px 0 0 0', fontSize: '1.25rem' }}>{user.name} <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>{user.team}</span></h2>)}
+    <div>
+      {editMode ? (<div style={{ display: 'flex', gap: '8px' }}><strong style={{ alignSelf: 'center' }}>{user.name}</strong><input value={newTeam} onChange={e => setNewTeam(e.target.value)} placeholder="신규 소속" style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #e5e7eb' }} /></div>) 
+      : (<h2 style={{ margin: '0', fontSize: '1.25rem' }}>{user.name} <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>{user.team}</span></h2>)}
     </div>
     <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
       {editMode ? (<><button type="button" className="ghost-button" onClick={() => { onUpdate(newTeam); setEditMode(false); }} style={{ padding: '8px', color: '#0f3d3e', fontWeight: 600 }}>저장</button><button type="button" className="ghost-button" onClick={() => setEditMode(false)} style={{ padding: '8px' }}>취소</button></>)
@@ -580,10 +621,11 @@ function UserDetailModal({ userName, riskUsers, onClose, onDelete, onUpdate }: {
       <button type="button" className="ghost-button" onClick={() => { if (window.confirm(`${userName} 구성원을 삭제하시겠습니까?`)) onDelete(); }} style={{ padding: '8px', color: '#d95d39', border: '1px solid #d95d39' }}>삭제</button>
       <select value={filterDays || 'all'} onChange={e => setFilterDays(e.target.value === 'all' ? null : Number(e.target.value))} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="all">전체 기간</option></select><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button>
     </div></header><div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
-    <section><h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldAlert size={18} />졸음 알림 로그 ({alerts.length}건)</h3>{alerts.length > 0 ? <div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>날짜</th><th>발생 시간</th><th>경고 단계</th><th>상세 내용</th></tr></thead><tbody>{alerts.map((a, i) => (<tr key={i}><td>{a.date}</td><td>{a.time}</td><td><span className={`feed-row__level feed-row__level--${a.level}`}>{a.level}</span></td><td>{a.note}</td></tr>))}</tbody></table></div> : <div style={{ padding: '24px', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', color: '#6b7280' }}>발생한 알림이 없습니다.</div>}</section>
-    <section><h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Clock3 size={18} />세션 로그 ({sessions.length}건)</h3>{sessions.length > 0 ? <div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>날짜</th><th>시작 시간</th><th>러닝 타임</th><th>알림 요약</th><th>동기화</th></tr></thead><tbody>{sessions.map((s, i) => (<tr key={i}><td>{s.date}</td><td>{s.startTime}</td><td>{s.duration}</td><td>{s.alerts || '-'}</td><td><span className={`sync-badge${s.sync === '동기화 완료' ? ' is-good' : ' is-bad'}`}>{s.sync}</span></td></tr>))}</tbody></table></div> : <div style={{ padding: '24px', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', color: '#6b7280' }}>기록된 세션이 없습니다.</div>}</section>
+    <section><h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldAlert size={18} />졸음 알림 로그 ({alerts.length}건)</h3>{alerts.length > 0 ? <div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>날짜</th><th>발생 시간</th><th>알림 단계</th><th>상세 내용</th></tr></thead><tbody>{alerts.map((a, i) => (<tr key={i}><td>{a.date}</td><td>{a.time}</td><td><span className={`feed-row__level feed-row__level--${a.level}`}>{a.level === 'L1' ? '졸음' : a.level === 'L2' ? '수면' : a.level}</span></td><td>{a.note}</td></tr>))}</tbody></table></div> : <div style={{ padding: '24px', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', color: '#6b7280' }}>발생한 알림이 없습니다.</div>}</section>
+    <section><h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Clock3 size={18} />세션 로그 ({sessions.length}건)</h3>{sessions.length > 0 ? <div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>날짜</th><th>시작 시간</th><th>러닝 타임</th><th>알림 요약</th></tr></thead><tbody>{sessions.map((s, i) => (<tr key={i}><td>{s.date}</td><td>{s.startTime}</td><td>{s.duration}</td><td>{s.alerts || '-'}</td></tr>))}</tbody></table></div> : <div style={{ padding: '24px', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', color: '#6b7280' }}>기록된 세션이 없습니다.</div>}</section>
   </div></div></div>)
 }
+
 function AddMemberModal({ onClose, onAdd }: { onClose: () => void, onAdd: (email: string, team: string) => void }) {
   const [team, setTeam] = useState(''); const [email, setEmail] = useState('')
   return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '400px', borderRadius: '12px', overflow: 'hidden' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h2>구성원 직접 추가</h2><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button></header><div style={{ padding: '24px' }}><p style={{ margin: '0 0 20px 0', fontSize: '0.9rem', color: '#6b7280' }}>이메일로 구성원을 등록합니다. 이름은 사용자가 앱 가입 시 설정한 정보로 자동 연동됩니다.</p><form onSubmit={e => { e.preventDefault(); onAdd(email, team); alert(`${email} 구성원이 추가되었습니다.`); onClose(); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -591,4 +633,5 @@ function AddMemberModal({ onClose, onAdd }: { onClose: () => void, onAdd: (email
     <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>소속 부서</label><input type="text" value={team} onChange={e => setTeam(e.target.value)} placeholder="운수팀 A" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb' }} required /></div>
     <button type="submit" className="ghost-button" style={{ background: '#0f3d3e', color: 'white', fontWeight: 600, height: '3rem' }}>추가 저장</button></form></div></div></div>)
 }
+
 export default App
