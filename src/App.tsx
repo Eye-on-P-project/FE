@@ -2,12 +2,15 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
   BellRing,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock3,
   LayoutDashboard,
   Lock,
   LogOut,
   Move,
+  Radio,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -52,12 +55,13 @@ type AlertItem = {
   date: string
   time: string
   note: string
+  status: '진행중' | '종료됨'
 }
 
 type RiskUser = {
   name: string
   team: string
-  riskScore: number
+  alertCount: number
   sessionsToday: number
 }
 
@@ -76,6 +80,7 @@ type WidgetMeta = {
 
 const navigationItems: NavigationItem[] = [
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
+  { id: 'live', label: '실시간', icon: Radio },
   { id: 'members', label: '구성원', icon: Users },
   { id: 'alerts', label: '알림', icon: BellRing },
   { id: 'statistics', label: '통계', icon: Activity },
@@ -151,61 +156,87 @@ const defaultLayouts: ResponsiveLayouts = {
 }
 
 const initialRiskUsers: RiskUser[] = [
-  { name: '김민수', team: '운수팀 A', riskScore: 93, sessionsToday: 12 },
-  { name: '마동석', team: '운수팀 C', riskScore: 95, sessionsToday: 8 },
-  { name: '지석진', team: '업무팀 2', riskScore: 91, sessionsToday: 11 },
-  { name: '김태리', team: '운수팀 B', riskScore: 88, sessionsToday: 10 },
-  { name: '이소율', team: '운수팀 C', riskScore: 86, sessionsToday: 13 },
-  { name: '이광수', team: '업무팀 2', riskScore: 82, sessionsToday: 15 },
-  { name: '송혜교', team: '업무팀 1', riskScore: 77, sessionsToday: 9 },
-  { name: '박연우', team: '운수팀 B', riskScore: 71, sessionsToday: 14 },
-  { name: '정하준', team: '업무팀 1', riskScore: 68, sessionsToday: 10 },
-  { name: '최지우', team: '운수팀 A', riskScore: 67, sessionsToday: 11 },
-  { name: '한효주', team: '운수팀 B', riskScore: 54, sessionsToday: 12 },
-  { name: '송중기', team: '업무팀 1', riskScore: 49, sessionsToday: 10 },
-  { name: '김도현', team: '업무팀 2', riskScore: 45, sessionsToday: 11 },
-  { name: '이준호', team: '운수팀 A', riskScore: 45, sessionsToday: 12 },
-  { name: '유해진', team: '운수팀 C', riskScore: 41, sessionsToday: 13 },
-  { name: '손예진', team: '업무팀 1', riskScore: 33, sessionsToday: 10 },
-  { name: '공유', team: '운수팀 B', riskScore: 31, sessionsToday: 11 },
-  { name: '정우성', team: '운수팀 B', riskScore: 22, sessionsToday: 12 },
-  { name: '조진웅', team: '운수팀 C', riskScore: 19, sessionsToday: 10 },
-  { name: '현빈', team: '업무팀 1', riskScore: 15, sessionsToday: 11 },
-  { name: '박서준', team: '운수팀 A', riskScore: 12, sessionsToday: 12 },
-  { name: '최은재', team: '업무팀 2', riskScore: 12, sessionsToday: 10 },
-  { name: '강하늘', team: '운수팀 A', riskScore: 8, sessionsToday: 11 },
-  { name: '김희애', team: '운수팀 C', riskScore: 5, sessionsToday: 12 },
-  { name: '김종국', team: '업무팀 2', riskScore: 3, sessionsToday: 10 },
+  { name: '김민수', team: '운수팀 A', alertCount: 12, sessionsToday: 12 },
+  { name: '마동석', team: '운수팀 C', alertCount: 9, sessionsToday: 8 },
+  { name: '지석진', team: '업무팀 2', alertCount: 8, sessionsToday: 11 },
+  { name: '김태리', team: '운수팀 B', alertCount: 7, sessionsToday: 10 },
+  { name: '이소율', team: '운수팀 C', alertCount: 7, sessionsToday: 13 },
+  { name: '이광수', team: '업무팀 2', alertCount: 6, sessionsToday: 15 },
+  { name: '송혜교', team: '업무팀 1', alertCount: 5, sessionsToday: 9 },
+  { name: '박연우', team: '운수팀 B', alertCount: 4, sessionsToday: 14 },
+  { name: '정하준', team: '업무팀 1', alertCount: 4, sessionsToday: 10 },
+  { name: '최지우', team: '운수팀 A', alertCount: 4, sessionsToday: 11 },
+  { name: '한효주', team: '운수팀 B', alertCount: 3, sessionsToday: 12 },
+  { name: '송중기', team: '업무팀 1', alertCount: 2, sessionsToday: 10 },
+  { name: '김도현', team: '업무팀 2', alertCount: 2, sessionsToday: 11 },
+  { name: '이준호', team: '운수팀 A', alertCount: 2, sessionsToday: 12 },
+  { name: '유해진', team: '운수팀 C', alertCount: 1, sessionsToday: 13 },
+  { name: '손예진', team: '업무팀 1', alertCount: 1, sessionsToday: 10 },
+  { name: '공유', team: '운수팀 B', alertCount: 1, sessionsToday: 11 },
+  { name: '정우성', team: '운수팀 B', alertCount: 0, sessionsToday: 12 },
+  { name: '조진웅', team: '운수팀 C', alertCount: 0, sessionsToday: 10 },
+  { name: '현빈', team: '업무팀 1', alertCount: 0, sessionsToday: 11 },
+  { name: '박서준', team: '운수팀 A', alertCount: 0, sessionsToday: 12 },
+  { name: '최은재', team: '업무팀 2', alertCount: 0, sessionsToday: 10 },
+  { name: '강하늘', team: '운수팀 A', alertCount: 0, sessionsToday: 11 },
+  { name: '김희애', team: '운수팀 C', alertCount: 0, sessionsToday: 12 },
+  { name: '김종국', team: '업무팀 2', alertCount: 0, sessionsToday: 10 },
 ]
 
-const alertItems: AlertItem[] = [
-  { user: '김민수', team: '운수팀 A', level: 'L2', date: '2026-04-11', time: '22:31', note: '수면 상태 3.2초 지속' },
-  { user: '김민수', team: '운수팀 A', level: 'L1', date: '2026-04-11', time: '21:15', note: '졸음 의심 현상 감지' },
-  { user: '이소율', team: '운수팀 C', level: 'L2', date: '2026-04-11', time: '22:10', note: '경고 자동 종료 후 재발생' },
-  { user: '마동석', team: '운수팀 C', level: 'L2', date: '2026-04-11', time: '20:45', note: '심각한 졸음 패턴 감지' },
-  { user: '지석진', team: '업무팀 2', level: 'L2', date: '2026-04-11', time: '19:20', note: '눈 감김 시간 초과' },
-  { user: '김태리', team: '운수팀 B', level: 'L1', date: '2026-04-11', time: '18:50', note: '반복적인 하품 감지' },
-  { user: '박연우', team: '운수팀 B', level: 'L1', date: '2026-04-10', time: '22:24', note: '졸음 상태 반복 감지' },
-  { user: '한효주', team: '운수팀 B', level: 'L1', date: '2026-04-10', time: '18:30', note: '시선 이탈 및 졸음 감지' },
-  { user: '이광수', team: '업무팀 2', level: 'L2', date: '2026-04-10', time: '15:20', note: '장시간 눈 감김 감지' },
-  { user: '송혜교', team: '업무팀 1', level: 'L2', date: '2026-04-09', time: '14:10', note: '수면 판정 알림 발송' },
-  { user: '지석진', team: '업무팀 2', level: 'L2', date: '2026-04-08', time: '11:05', note: '반복적 졸음 발생' },
-  { user: '김태리', team: '운수팀 B', level: 'L2', date: '2026-04-07', time: '23:40', note: '야간 운전 중 졸음 감지' },
-  { user: '최지우', team: '운수팀 A', level: 'L1', date: '2026-04-06', time: '09:15', note: '졸음 주의 단계 진입' },
-  { user: '정하준', team: '업무팀 1', level: 'L1', date: '2026-04-01', time: '21:58', note: '장시간 무반응' },
-]
+const { alertItems, sessionRows } = (() => {
+  const alerts: AlertItem[] = []
+  const sessions: SessionRow[] = []
+  let globalAlertIndex = 0
 
-const sessionRows: SessionRow[] = [
-  ...initialRiskUsers.flatMap(user => 
-    Array.from({ length: 12 }).map((_, idx) => ({
+  initialRiskUsers.forEach(user => {
+    const userSessions = Array.from({ length: 12 }).map((_, idx) => ({
       user: user.name,
       date: `2026-04-${String(11 - Math.floor(idx/3)).padStart(2, '0')}`,
       startTime: `${String(8 + (idx % 8) * 2).padStart(2, '0')}:15`,
       duration: `${1 + (idx % 3)}h ${10 + (idx * 5) % 45}m`,
-      alerts: idx % 4 === 0 ? '졸음 2회 / 수면 1회' : idx % 7 === 0 ? '수면 1회' : '정상'
+      alerts: '정상',
+      _l1: 0,
+      _l2: 0,
     }))
-  )
-]
+
+    for (let i = 0; i < user.alertCount; i++) {
+      const sessionIdx = i % 12
+      const isL2 = i % 3 === 0
+      const session = userSessions[sessionIdx]
+      
+      if (isL2) session._l2++
+      else session._l1++
+      
+      const level = isL2 ? 'L2' : 'L1'
+      const status = globalAlertIndex < 3 ? '진행중' : '종료됨'
+      globalAlertIndex++
+      
+      alerts.push({
+        user: user.name,
+        team: user.team,
+        level,
+        date: session.date,
+        time: `${String(8 + (sessionIdx % 8) * 2 + 1).padStart(2, '0')}:${String(10 + (i * 7) % 50).padStart(2, '0')}`,
+        note: isL2 ? '수면 상태 지속' : '졸음 의심 현상 감지',
+        status
+      })
+    }
+
+    userSessions.forEach(session => {
+      if (session._l1 > 0 || session._l2 > 0) {
+        const parts = []
+        if (session._l1 > 0) parts.push(`졸음 ${session._l1}회`)
+        if (session._l2 > 0) parts.push(`수면 ${session._l2}회`)
+        session.alerts = parts.join(' / ')
+      }
+      delete (session as any)._l1
+      delete (session as any)._l2
+      sessions.push(session as SessionRow)
+    })
+  })
+  
+  return { alertItems: alerts, sessionRows: sessions }
+})()
 
 const hourlyTrendData = [
   { label: '00', value: 5 }, { label: '02', value: 3 }, { label: '04', value: 8 }, { label: '06', value: 12 },
@@ -276,6 +307,7 @@ function App() {
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false)
   const [riskUsers, setRiskUsers] = useState<RiskUser[]>(initialRiskUsers)
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
+  const [expandedLiveUsers, setExpandedLiveUsers] = useState<string[]>([])
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
   const [statStartDate, setStatStartDate] = useState('2026-04-04')
   const [statEndDate, setStatEndDate] = useState('2026-04-11')
@@ -351,6 +383,96 @@ function App() {
       </aside>
       
       <main className="workspace">
+        {activeTab === 'live' && (
+          <>
+            <header className="topbar">
+              <div className="topbar__copy">
+                <h1>실시간 모니터링</h1>
+              </div>
+            </header>
+            <section className="board-section" style={{ display: 'flex', gap: '24px', flex: 1, padding: '24px', overflow: 'hidden' }}>
+              <div className="widget-stack" style={{ flex: 2, background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h2 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Wifi size={20} color="#10b981" /> 현재 활성 세션</h2>
+                  <span style={{ background: '#ecfdf5', color: '#059669', padding: '4px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>{riskUsers.length}명 접속 중</span>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                    {riskUsers.map(user => {
+                      const sessionAlerts = alertItems.filter(a => a.user === user.name && a.date === '2026-04-11')
+                      const isExpanded = expandedLiveUsers.includes(user.name)
+                      return (
+                      <article key={user.name} style={{ padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <div>
+                            <strong style={{ fontSize: '1.1rem' }}>{user.name}</strong>
+                            <span style={{ display: 'block', fontSize: '0.85rem', color: '#6b7280', marginTop: '4px' }}>{user.team}</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>세션 시간</span>
+                            <strong style={{ fontFamily: 'monospace' }}>{String(user.name.length % 3).padStart(2, '0')}:{String((user.alertCount * 7 + user.sessionsToday) % 60).padStart(2, '0')}:{String((user.sessionsToday * 13 + user.name.length * 5) % 60).padStart(2, '0')}</strong>
+                          </div>
+                        </div>
+                        <div style={{ height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(sessionAlerts.length * 10, 100)}%`, height: '100%', background: sessionAlerts.length >= 5 ? '#ef4444' : sessionAlerts.length >= 2 ? '#f59e0b' : '#10b981' }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', alignItems: 'center' }}>
+                          <span style={{ color: '#6b7280' }}>이번 세션 알림</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <strong>{sessionAlerts.length}건</strong>
+                            <button type="button" className="ghost-button" style={{ padding: '4px', height: 'auto' }} onClick={() => setExpandedLiveUsers(prev => prev.includes(user.name) ? prev.filter(n => n !== user.name) : [...prev, user.name])}>
+                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                        {isExpanded && sessionAlerts.length > 0 && (
+                          <div style={{ borderTop: '1px dashed #e5e7eb', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {sessionAlerts.map((a, i) => (
+                              <div key={i} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: a.level === 'L2' ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>{a.level === 'L1' ? '졸음' : '수면'}</span>
+                                <span style={{ color: '#6b7280' }}>{a.time} 발생 {a.status === '종료됨' ? '(해제됨)' : <strong style={{ color: '#ef4444' }}>(진행중)</strong>}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {isExpanded && sessionAlerts.length === 0 && (
+                          <div style={{ borderTop: '1px dashed #e5e7eb', paddingTop: '12px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center' }}>
+                            이번 세션 발생 알림 없음
+                          </div>
+                        )}
+                      </article>
+                    )})}
+                  </div>
+                </div>
+              </div>
+
+              <div className="widget-stack" style={{ flex: 1, background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '24px', display: 'flex', flexDirection: 'column', borderColor: alertItems.some(a => a.status === '진행중') ? '#fca5a5' : '#e5e7eb', boxShadow: alertItems.some(a => a.status === '진행중') ? '0 0 0 2px rgba(239,68,68,0.2)' : 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h2 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><BellRing size={20} color="#ef4444" className="pulse-icon" /> 긴급/실시간 알림</h2>
+                  <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>{alertItems.filter(a => a.status === '진행중').length}건 진행중</span>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px' }}>
+                  {alertItems.filter(a => a.status === '진행중').map((item, i) => (
+                    <article key={i} className="feed-row" style={{ margin: 0, border: '1px solid #fecaca', background: '#fff5f5' }}>
+                      <div className="feed-row__head">
+                        <div><strong>{item.user}</strong><span>{item.team}</span></div>
+                        <span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span>
+                      </div>
+                      <p className="feed-row__note" style={{ color: '#991b1b', fontWeight: 500 }}>{item.note}</p>
+                      <div className="feed-row__meta">
+                        <span>발생: {item.time}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ef4444', fontWeight: 'bold' }}><Activity size={12} className="pulse-icon" /> 조치 대기중</span>
+                      </div>
+                    </article>
+                  ))}
+                  {alertItems.filter(a => a.status === '진행중').length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>현재 진행중인 실시간 알림이 없습니다.</div>
+                  )}
+                </div>
+              </div>
+            </section>
+          </>
+        )}
         {activeTab === 'dashboard' && (
           <>
             <header className="topbar">
@@ -361,8 +483,9 @@ function App() {
             </header>
             <section className="hero-strip">
               <SummaryCard icon={Wifi} label="현재 활성 사용자" value={riskUsers.length.toString()} detail="전체 등록 인원 기준" />
-              <SummaryCard icon={ShieldAlert} label="오늘 위험 사용자" value={riskUsers.filter(u => u.riskScore > 70).length.toString()} detail="누적 위험도 70점 이상" />
+              <SummaryCard icon={ShieldAlert} label="오늘 위험 사용자" value={riskUsers.filter(u => u.alertCount >= 5).length.toString()} detail="금일 알림 5회 이상" />
               <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
+              <SummaryCard icon={Activity} label="완전 실시간 알림" value={alertItems.filter(a => a.status === '진행중').length.toString()} detail="앱에서 미종료된 실시간 알림" />
             </section>
             <section className="board-section">
               <div className="board-section__header"><div><h2>전체 조직</h2></div><div className="board-section__meta"><span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span><span>{hiddenCount > 0 ? `숨김 ${hiddenCount}개` : '전체 표시 중'}</span></div></div>
@@ -390,12 +513,12 @@ function App() {
               </div>
               <div className="table-shell">
                 <table>
-                  <thead><tr><th>사용자</th><th>소속</th><th>금일 세션 수</th><th>최근 위험도 점수</th><th>관리</th></tr></thead>
+                  <thead><tr><th>사용자</th><th>소속</th><th>금일 세션 수</th><th>알림 발생 횟수</th><th>관리</th></tr></thead>
                   <tbody>
                     {riskUsers.filter(u => u.name.includes(memberSearchQuery) || u.team.includes(memberSearchQuery)).map((user) => (
                       <tr key={user.name}>
                         <td><strong>{user.name}</strong></td><td>{user.team}</td><td>{user.sessionsToday}회</td>
-                        <td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '30px' }}>{user.riskScore}</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${user.riskScore}%`, height: '100%', background: user.riskScore > 80 ? '#ef4444' : user.riskScore > 60 ? '#f59e0b' : '#10b981' }} /></div></div></td>
+                        <td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '30px' }}>{user.alertCount}회</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${Math.min(user.alertCount * 10, 100)}%`, height: '100%', background: user.alertCount >= 5 ? '#ef4444' : user.alertCount >= 2 ? '#f59e0b' : '#10b981' }} /></div></div></td>
                         <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail(user.name)}>상세 정보</button></td>
                       </tr>
                     ))}
@@ -532,7 +655,7 @@ function App() {
       
       {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} riskUsers={riskUsers} onClose={() => setSelectedUserForDetail(null)} onDelete={() => { setRiskUsers(prev => prev.filter(u => u.name !== selectedUserForDetail)); setSelectedUserForDetail(null); }} onUpdate={(newTeam) => { setRiskUsers(prev => prev.map(u => u.name === selectedUserForDetail ? { ...u, team: newTeam } : u)); }} />}
       {selectedStatGroup && <StatEventModal groupKey={selectedStatGroup.key} items={selectedStatGroup.items} onClose={() => setSelectedStatGroup(null)} />}
-      {isAddMemberModalOpen && <AddMemberModal onAdd={(email, team) => setRiskUsers(prev => [...prev, { name: email.split('@')[0], team, riskScore: 0, sessionsToday: 0 }])} onClose={() => setIsAddMemberModalOpen(false)} />}
+      {isAddMemberModalOpen && <AddMemberModal onAdd={(email, team) => setRiskUsers(prev => [...prev, { name: email.split('@')[0], team, alertCount: 0, sessionsToday: 0 }])} onClose={() => setIsAddMemberModalOpen(false)} />}
     </div>
   )
 }
@@ -558,8 +681,8 @@ function WidgetShell({ meta, editMode, children }: { meta: WidgetMeta, editMode:
 }
 
 function ActiveUsersWidget({ riskUsers }: { riskUsers: RiskUser[] }) {
-  const highRisk = riskUsers.filter(u => u.riskScore > 80).length
-  const caution = riskUsers.filter(u => u.riskScore > 50 && u.riskScore <= 80).length
+  const highRisk = riskUsers.filter(u => u.alertCount >= 5).length
+  const caution = riskUsers.filter(u => u.alertCount >= 2 && u.alertCount < 5).length
   const normal = riskUsers.length - highRisk - caution
   return (<div className="widget-stack"><div className="hero-stat"><div><p className="hero-stat__label">조직 전체 등록 인원</p><strong className="hero-stat__value">{riskUsers.length}</strong></div><div className="hero-stat__badge">+2 from 1h ago</div></div>
     <div className="metric-grid"><MetricItem label="정상" value={normal.toString()} tone="emerald" /><MetricItem label="졸음" value={caution.toString()} tone="sand" /><MetricItem label="수면" value={highRisk.toString()} tone="blue" /></div>
@@ -569,8 +692,8 @@ function ActiveUsersWidget({ riskUsers }: { riskUsers: RiskUser[] }) {
 function MetricItem({ label, value, tone }: { label: string, value: string, tone: 'blue' | 'sand' | 'emerald' }) { return (<div className={`metric-item metric-item--${tone}`}><span>{label}</span><strong>{value}</strong></div>) }
 
 function RiskUsersWidget({ onShowUserDetail, riskUsers }: { onShowUserDetail?: (name: string) => void, riskUsers: RiskUser[] }) {
-  const sorted = [...riskUsers].sort((a, b) => b.riskScore - a.riskScore)
-  return (<div className="widget-stack">{sorted.map(user => (<article key={user.name} className="risk-row"><div className="risk-row__copy"><div><strong>{user.name}</strong><span>{user.team}</span></div><span className="risk-row__sessions">{user.sessionsToday}세션</span></div><div className="risk-row__bar"><div style={{ width: `${user.riskScore}%`, background: user.riskScore > 80 ? '#ef4444' : user.riskScore > 60 ? '#f59e0b' : '#10b981' }} /></div><div className="risk-row__footer"><span>위험도 {user.riskScore}</span><button type="button" onClick={() => onShowUserDetail?.(user.name)}>상세 보기</button></div></article>))}</div>)
+  const sorted = [...riskUsers].sort((a, b) => b.alertCount - a.alertCount)
+  return (<div className="widget-stack">{sorted.map(user => (<article key={user.name} className="risk-row"><div className="risk-row__copy"><div><strong>{user.name}</strong><span>{user.team}</span></div><span className="risk-row__sessions">{user.sessionsToday}세션</span></div><div className="risk-row__bar"><div style={{ width: `${Math.min(user.alertCount * 10, 100)}%`, background: user.alertCount >= 5 ? '#ef4444' : user.alertCount >= 2 ? '#f59e0b' : '#10b981' }} /></div><div className="risk-row__footer"><span>알림 {user.alertCount}회</span><button type="button" onClick={() => onShowUserDetail?.(user.name)}>상세 보기</button></div></article>))}</div>)
 }
 
 function AlertFeedWidget({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
@@ -593,7 +716,9 @@ function HourlyTrendWidget() {
 
 function SessionTableWidget() {
   const [query, setQuery] = useState('')
-  const filtered = sessionRows.filter(row => row.user.toLowerCase().includes(query.toLowerCase()) || row.alerts.toLowerCase().includes(query.toLowerCase()))
+  const filtered = sessionRows
+    .filter(row => row.user.toLowerCase().includes(query.toLowerCase()) || row.alerts.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => new Date(`${b.date}T${b.startTime}`).getTime() - new Date(`${a.date}T${a.startTime}`).getTime())
   return (<div className="widget-stack">
     <div className="search-strip">
       <div className="search-strip__input"><Search size={16} /><input type="text" placeholder="사용자 또는 알림 검색" value={query} onChange={e => setQuery(e.target.value)} style={{ background: 'transparent', border: 'none', outline: 'none', color: 'inherit', width: '100%' }} /></div>
@@ -606,7 +731,7 @@ function StatEventModal({ groupKey, items, onClose }: { groupKey: string, items:
 }
 
 function UserDetailModal({ userName, riskUsers, onClose, onDelete, onUpdate }: { userName: string, riskUsers: RiskUser[], onClose: () => void, onDelete: () => void, onUpdate: (team: string) => void }) {
-  const [filterDays, setFilterDays] = useState<number | null>(7); const [editMode, setEditMode] = useState(false); const user = riskUsers.find(u => u.name === userName) || { name: userName, team: '미상', riskScore: 0, sessionsToday: 0 }
+  const [filterDays, setFilterDays] = useState<number | null>(7); const [editMode, setEditMode] = useState(false); const user = riskUsers.find(u => u.name === userName) || { name: userName, team: '미상', alertCount: 0, sessionsToday: 0 }
   const [newTeam, setNewTeam] = useState(user.team)
   const filterByDate = (date: string) => { if (!filterDays) return true; return (new Date('2026-04-11').getTime() - new Date(date).getTime()) / 86400000 <= filterDays }
   const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date)); const sessions = sessionRows.filter(s => s.user === userName && filterByDate(s.date))

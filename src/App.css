@@ -874,3 +874,7 @@
     width: 100%;
   }
 }
+
+@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
+.pulse-icon { animation: pulse 2s infinite ease-in-out; }
+
