@@ -1,571 +1,677 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Activity,
   BellRing,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
   Clock3,
-  LayoutDashboard,
   Lock,
   LogOut,
   Move,
-  Radio,
   RotateCcw,
   Search,
   ShieldAlert,
   SquarePen,
   UserCircle,
-  Users,
-  Wifi,
-  type LucideIcon,
 } from 'lucide-react'
 import {
   Responsive,
   WidthProvider,
-  type Layout,
-  type ResponsiveLayouts,
+  type ResponsiveLayouts
 } from 'react-grid-layout/legacy'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
-import './App.css'
+import './index.css'
+
+import {
+  navigationItems,
+  widgetOrder,
+  widgetMeta,
+  defaultLayouts,
+  initialRiskUsers,
+  alertItems,
+  sessionRows,
+  hourlyTrendData
+} from './data/mockData'
+import type { RiskUser, AlertItem, SessionRow, WidgetId } from './types'
 
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
 
-type WidgetId =
-  | 'activeUsers'
-  | 'riskUsers'
-  | 'alertFeed'
-  | 'hourlyTrend'
-  | 'sessionTable'
-
-type NavigationItem = {
-  id: string
-  label: string
-  icon: LucideIcon
-}
-
-type AlertItem = {
-  user: string
-  team: string
-  level: 'L1' | 'L2'
-  date: string
-  time: string
-  note: string
-  status: '진행중' | '종료됨'
-}
-
-type RiskUser = {
-  name: string
-  team: string
-  alertCount: number
-  sessionsToday: number
-}
-
-type SessionRow = {
-  user: string
-  date: string
-  startTime: string
-  duration: string
-  alerts: string
-}
-
-type WidgetMeta = {
-  id: WidgetId
-  title: string
-}
-
-const navigationItems: NavigationItem[] = [
-  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-  { id: 'live', label: '실시간', icon: Radio },
-  { id: 'members', label: '구성원', icon: Users },
-  { id: 'alerts', label: '알림', icon: BellRing },
-  { id: 'statistics', label: '통계', icon: Activity },
-]
-
-const widgetOrder: WidgetId[] = [
-  'activeUsers',
-  'riskUsers',
-  'alertFeed',
-  'hourlyTrend',
-  'sessionTable',
-]
-
-const widgetMeta: Record<WidgetId, WidgetMeta> = {
-  activeUsers: {
-    id: 'activeUsers',
-    title: '실시간 현황',
-  },
-  riskUsers: {
-    id: 'riskUsers',
-    title: '위험 사용자 큐',
-  },
-  alertFeed: {
-    id: 'alertFeed',
-    title: '실시간 알림',
-  },
-  hourlyTrend: {
-    id: 'hourlyTrend',
-    title: '졸음 발생 추이',
-  },
-  sessionTable: {
-    id: 'sessionTable',
-    title: '최근 접속 세션',
-  },
-}
-
-const defaultLayouts: ResponsiveLayouts = {
-  lg: [
-    { i: 'activeUsers', x: 0, y: 0, w: 4, h: 10 },
-    { i: 'riskUsers', x: 4, y: 0, w: 4, h: 10 },
-    { i: 'alertFeed', x: 8, y: 0, w: 4, h: 10 },
-    { i: 'hourlyTrend', x: 0, y: 10, w: 6, h: 11 },
-    { i: 'sessionTable', x: 6, y: 10, w: 6, h: 11 },
-  ],
-  md: [
-    { i: 'activeUsers', x: 0, y: 0, w: 5, h: 10 },
-    { i: 'riskUsers', x: 5, y: 0, w: 5, h: 10 },
-    { i: 'alertFeed', x: 0, y: 10, w: 5, h: 10 },
-    { i: 'hourlyTrend', x: 5, y: 10, w: 5, h: 11 },
-    { i: 'sessionTable', x: 0, y: 21, w: 10, h: 11 },
-  ],
-  sm: [
-    { i: 'activeUsers', x: 0, y: 0, w: 6, h: 10 },
-    { i: 'riskUsers', x: 0, y: 10, w: 6, h: 10 },
-    { i: 'alertFeed', x: 0, y: 20, w: 6, h: 10 },
-    { i: 'hourlyTrend', x: 0, y: 30, w: 6, h: 11 },
-    { i: 'sessionTable', x: 0, y: 41, w: 6, h: 11 },
-  ],
-  xs: [
-    { i: 'activeUsers', x: 0, y: 0, w: 4, h: 10 },
-    { i: 'riskUsers', x: 0, y: 10, w: 4, h: 10 },
-    { i: 'alertFeed', x: 0, y: 20, w: 4, h: 10 },
-    { i: 'hourlyTrend', x: 0, y: 30, w: 4, h: 11 },
-    { i: 'sessionTable', x: 0, y: 41, w: 4, h: 11 },
-  ],
-  xxs: [
-    { i: 'activeUsers', x: 0, y: 0, w: 2, h: 10 },
-    { i: 'riskUsers', x: 0, y: 10, w: 2, h: 10 },
-    { i: 'alertFeed', x: 0, y: 20, w: 2, h: 10 },
-    { i: 'hourlyTrend', x: 0, y: 30, w: 2, h: 12 },
-    { i: 'sessionTable', x: 0, y: 42, w: 2, h: 13 },
-  ],
-}
-
-const initialRiskUsers: RiskUser[] = [
-  { name: '김민수', team: '운수팀 A', alertCount: 12, sessionsToday: 12 },
-  { name: '마동석', team: '운수팀 C', alertCount: 9, sessionsToday: 8 },
-  { name: '지석진', team: '업무팀 2', alertCount: 8, sessionsToday: 11 },
-  { name: '김태리', team: '운수팀 B', alertCount: 7, sessionsToday: 10 },
-  { name: '이소율', team: '운수팀 C', alertCount: 7, sessionsToday: 13 },
-  { name: '이광수', team: '업무팀 2', alertCount: 6, sessionsToday: 15 },
-  { name: '송혜교', team: '업무팀 1', alertCount: 5, sessionsToday: 9 },
-  { name: '박연우', team: '운수팀 B', alertCount: 4, sessionsToday: 14 },
-  { name: '정하준', team: '업무팀 1', alertCount: 4, sessionsToday: 10 },
-  { name: '최지우', team: '운수팀 A', alertCount: 4, sessionsToday: 11 },
-  { name: '한효주', team: '운수팀 B', alertCount: 3, sessionsToday: 12 },
-  { name: '송중기', team: '업무팀 1', alertCount: 2, sessionsToday: 10 },
-  { name: '김도현', team: '업무팀 2', alertCount: 2, sessionsToday: 11 },
-  { name: '이준호', team: '운수팀 A', alertCount: 2, sessionsToday: 12 },
-  { name: '유해진', team: '운수팀 C', alertCount: 1, sessionsToday: 13 },
-  { name: '손예진', team: '업무팀 1', alertCount: 1, sessionsToday: 10 },
-  { name: '공유', team: '운수팀 B', alertCount: 1, sessionsToday: 11 },
-  { name: '정우성', team: '운수팀 B', alertCount: 0, sessionsToday: 12 },
-  { name: '조진웅', team: '운수팀 C', alertCount: 0, sessionsToday: 10 },
-  { name: '현빈', team: '업무팀 1', alertCount: 0, sessionsToday: 11 },
-  { name: '박서준', team: '운수팀 A', alertCount: 0, sessionsToday: 12 },
-  { name: '최은재', team: '업무팀 2', alertCount: 0, sessionsToday: 10 },
-  { name: '강하늘', team: '운수팀 A', alertCount: 0, sessionsToday: 11 },
-  { name: '김희애', team: '운수팀 C', alertCount: 0, sessionsToday: 12 },
-  { name: '김종국', team: '업무팀 2', alertCount: 0, sessionsToday: 10 },
-]
-
-const { alertItems, sessionRows } = (() => {
-  const alerts: AlertItem[] = []
-  const sessions: SessionRow[] = []
-  let globalAlertIndex = 0
-
-  initialRiskUsers.forEach(user => {
-    const userSessions = Array.from({ length: 12 }).map((_, idx) => ({
-      user: user.name,
-      date: `2026-04-${String(11 - Math.floor(idx/3)).padStart(2, '0')}`,
-      startTime: `${String(8 + (idx % 8) * 2).padStart(2, '0')}:15`,
-      duration: `${1 + (idx % 3)}h ${10 + (idx * 5) % 45}m`,
-      alerts: '정상',
-      _l1: 0,
-      _l2: 0,
-    }))
-
-    for (let i = 0; i < user.alertCount; i++) {
-      const sessionIdx = i % 12
-      const isL2 = i % 3 === 0
-      const session = userSessions[sessionIdx]
-      
-      if (isL2) session._l2++
-      else session._l1++
-      
-      const level = isL2 ? 'L2' : 'L1'
-      const status = globalAlertIndex < 3 ? '진행중' : '종료됨'
-      globalAlertIndex++
-      
-      alerts.push({
-        user: user.name,
-        team: user.team,
-        level,
-        date: session.date,
-        time: `${String(8 + (sessionIdx % 8) * 2 + 1).padStart(2, '0')}:${String(10 + (i * 7) % 50).padStart(2, '0')}`,
-        note: isL2 ? '수면 상태 지속' : '졸음 의심 현상 감지',
-        status
-      })
-    }
-
-    userSessions.forEach(session => {
-      if (session._l1 > 0 || session._l2 > 0) {
-        const parts = []
-        if (session._l1 > 0) parts.push(`졸음 ${session._l1}회`)
-        if (session._l2 > 0) parts.push(`수면 ${session._l2}회`)
-        session.alerts = parts.join(' / ')
-      }
-      delete (session as any)._l1
-      delete (session as any)._l2
-      sessions.push(session as SessionRow)
-    })
-  })
-  
-  return { alertItems: alerts, sessionRows: sessions }
-})()
-
-const hourlyTrendData = [
-  { label: '00', value: 5 }, { label: '02', value: 3 }, { label: '04', value: 8 }, { label: '06', value: 12 },
-  { label: '08', value: 14 }, { label: '10', value: 18 }, { label: '12', value: 31 }, { label: '14', value: 24 },
-  { label: '16', value: 39 }, { label: '18', value: 48 }, { label: '20', value: 42 }, { label: '22', value: 33 },
-]
-
-function readStoredLayouts(): ResponsiveLayouts {
-  if (typeof window === 'undefined') return defaultLayouts
-  const raw = window.localStorage.getItem(LAYOUTS_STORAGE_KEY)
-  if (!raw) return defaultLayouts
-  try {
-    const parsed = JSON.parse(raw) as ResponsiveLayouts
-    return parsed && Object.keys(parsed).length > 0 ? parsed : defaultLayouts
-  } catch { return defaultLayouts }
-}
-
-function readStoredVisibleWidgets(): WidgetId[] {
-  if (typeof window === 'undefined') return widgetOrder
-  const raw = window.localStorage.getItem(VISIBLE_STORAGE_KEY)
-  if (!raw) return widgetOrder
-  try {
-    const parsed = JSON.parse(raw) as WidgetId[]
-    const valid = parsed.filter(id => widgetOrder.includes(id))
-    return valid.length > 0 ? valid : widgetOrder
-  } catch { return widgetOrder }
-}
-
-function LoginPage({ onLogin }: { onLogin: () => void }) {
-  const [isLoginMode, setIsLoginMode] = useState(true)
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [operatorCode, setOperatorCode] = useState('')
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (isLoginMode) { onLogin() }
-    else {
-      if (operatorCode !== 'ABC-123') { alert('유효하지 않은 운영자 코드입니다.'); return; }
-      alert('회원가입이 완료되었습니다. 로그인해 주세요.'); setIsLoginMode(true); setPassword(''); setOperatorCode('')
-    }
-  }
+function SummaryCard({ icon: Icon, label, value, detail }: { icon: any, label: string, value: string, detail: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', padding: '20px' }}>
-      <div style={{ background: 'white', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{ width: '64px', height: '64px', background: '#0f3d3e', borderRadius: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', color: 'white' }}><Lock size={32} /></div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 8px 0' }}>{isLoginMode ? '관리자 로그인' : '조직 관리자 회원가입'}</h1>
-        </div>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>이메일</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb' }} required /></div>
-          <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>비밀번호</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb' }} required /></div>
-          {!isLoginMode && (<div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>운영자 코드</label><input type="text" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} placeholder="ABC-123" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb' }} required /></div>)}
-          <button type="submit" className="ghost-button" style={{ width: '100%', background: '#0f3d3e', color: 'white', fontWeight: 600, height: '3.5rem', marginTop: '12px' }}>{isLoginMode ? '로그인' : '회원가입'}</button>
-        </form>
-        <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '0.85rem', color: '#6b7280' }}>
-          {isLoginMode ? (<>계정이 없으신가요? <a href="#" onClick={e => { e.preventDefault(); setIsLoginMode(false); }} style={{ color: '#0f3d3e', fontWeight: 600 }}>회원가입</a></>) : (<>이미 계정이 있으신가요? <a href="#" onClick={e => { e.preventDefault(); setIsLoginMode(true); }} style={{ color: '#0f3d3e', fontWeight: 600 }}>로그인</a></>)}
-        </div>
+    <div className="flex gap-4 p-5 bg-white border border-slate-100 rounded-2xl shadow-sm hover:-translate-y-1 hover:shadow-md transition-all">
+      <div className="grid w-12 h-12 place-items-center rounded-xl bg-blue-50 text-blue-600">
+        <Icon size={20} />
+      </div>
+      <div>
+        <p className="m-0 text-sm font-bold text-slate-500">{label}</p>
+        <strong className="block my-1 text-2xl font-black leading-none text-slate-900">{value}</strong>
+        <p className="m-0 text-xs text-slate-400">{detail}</p>
       </div>
     </div>
   )
 }
 
-function App() {
-  const [activeTab, setActiveTab] = useState('dashboard')
+function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose, onDelete, onUpdate }: { userName: string, riskUsers: RiskUser[], alertItems: AlertItem[], sessionRows: SessionRow[], onClose: () => void, onDelete: () => void, onUpdate: (team: string) => void }) {
+  const [filterDays, setFilterDays] = useState<number | null>(7)
   const [editMode, setEditMode] = useState(false)
-  const [layouts, setLayouts] = useState<ResponsiveLayouts>(readStoredLayouts)
-  const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(readStoredVisibleWidgets)
+  const user = riskUsers.find(u => u.name === userName) || { name: userName, team: 'UNKNOWN', alertCount: 0, sessionsToday: 0 }
+  const [newTeam, setNewTeam] = useState(user.team)
+
+  const filterByDate = (date: string) => { 
+    if (!filterDays) return true; 
+    return (new Date('2026-04-11').getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
+  }
+  
+  const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date))
+  const sessions = sessionRows.filter(s => s.user === userName && filterByDate(s.date))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
+        <header className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-4">
+            <div className="grid w-12 h-12 place-items-center rounded-xl bg-blue-100 text-blue-700 font-bold text-xl">
+              {userName[0]}
+            </div>
+            <div>
+              <h2 className="m-0 text-xl font-bold text-slate-900">{userName}</h2>
+              {editMode ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input type="text" value={newTeam} onChange={e => setNewTeam(e.target.value)} className="px-2 py-1 text-sm border border-slate-300 rounded outline-none" />
+                  <button type="button" onClick={() => { onUpdate(newTeam); setEditMode(false) }} className="px-3 py-1 text-xs font-bold text-white bg-blue-600 rounded">저장</button>
+                  <button type="button" onClick={() => { setNewTeam(user.team); setEditMode(false) }} className="px-3 py-1 text-xs font-bold text-slate-600 bg-slate-200 rounded">취소</button>
+                </div>
+              ) : (
+                <p className="m-0 text-sm text-slate-500 mt-1 flex items-center gap-2">
+                  소속: {user.team}
+                  <button type="button" onClick={() => setEditMode(true)} className="text-blue-500 hover:text-blue-700"><SquarePen size={14} /></button>
+                </p>
+              )}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">닫기</button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl border border-slate-100 bg-slate-50">
+              <span className="block text-sm text-slate-500 mb-1">총 졸음/수면 알림</span>
+              <strong className="text-2xl font-black text-slate-900">{alerts.length}건</strong>
+            </div>
+            <div className="p-4 rounded-xl border border-slate-100 bg-slate-50">
+              <span className="block text-sm text-slate-500 mb-1">최근 접속 세션</span>
+              <strong className="text-2xl font-black text-slate-900">{sessions.length}건</strong>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+            <span className="text-sm font-bold text-slate-700">조회 기간:</span>
+            {[7, 30, null].map(days => (
+              <button 
+                key={days || 'all'} 
+                type="button" 
+                className={`px-3 py-1 text-xs font-bold rounded-full transition-all ${filterDays === days ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                onClick={() => setFilterDays(days)}
+              >
+                {days ? `최근 ${days}일` : '전체'}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 mb-3">알림 이력</h3>
+            <div className="overflow-x-auto border border-slate-100 rounded-xl">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr><th className="p-3 font-medium border-b border-slate-100">일시</th><th className="p-3 font-medium border-b border-slate-100">단계</th><th className="p-3 font-medium border-b border-slate-100">내용</th></tr>
+                </thead>
+                <tbody>
+                  {alerts.length > 0 ? alerts.map((a, i) => (
+                    <tr key={i} className="border-b border-slate-100 last:border-0">
+                      <td className="p-3 whitespace-nowrap">{a.date} {a.time}</td>
+                      <td className="p-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${a.level === 'L1' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                          {a.level === 'L1' ? '졸음' : '수면'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-slate-600">{a.note}</td>
+                    </tr>
+                  )) : <tr><td colSpan={3} className="p-4 text-center text-slate-500">해당 기간 내 알림 이력이 없습니다.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 mb-3">세션 이력</h3>
+            <div className="overflow-x-auto border border-slate-100 rounded-xl">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr><th className="p-3 font-medium border-b border-slate-100">날짜</th><th className="p-3 font-medium border-b border-slate-100">시작 시간</th><th className="p-3 font-medium border-b border-slate-100">이용 시간</th><th className="p-3 font-medium border-b border-slate-100">발생 알림</th></tr>
+                </thead>
+                <tbody>
+                  {sessions.length > 0 ? sessions.map((s, i) => (
+                    <tr key={i} className="border-b border-slate-100 last:border-0">
+                      <td className="p-3 whitespace-nowrap">{s.date}</td>
+                      <td className="p-3">{s.startTime}</td>
+                      <td className="p-3">{s.duration}</td>
+                      <td className="p-3">
+                        {s.alerts === '정상' ? <span className="text-emerald-600 font-medium">정상</span> : <span className="text-red-600 font-medium">{s.alerts}</span>}
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan={4} className="p-4 text-center text-slate-500">해당 기간 내 접속 세션이 없습니다.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <footer className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+          <button type="button" onClick={() => { if(confirm('정말 이 사용자를 삭제하시겠습니까?')) { onDelete(); onClose(); } }} className="text-sm font-bold text-red-500 hover:text-red-700">사용자 삭제</button>
+          <p className="m-0 text-xs text-slate-400">ID: {userName.toLowerCase()}_{user.team.replace(/\s/g, '')}</p>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function getWeekStr(dateStr: string) {
+  const d = new Date(dateStr)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7)
+  const week1 = new Date(d.getFullYear(), 0, 4)
+  const week = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)
+  return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`
+}
+
+function getWeekOfMonthStr(dateStr: string) {
+  const d = new Date(dateStr)
+  const month = d.getMonth() + 1
+  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).getDay()
+  const week = Math.ceil((d.getDate() + firstDay) / 7)
+  return `${d.getFullYear()}-${String(month).padStart(2, '0')} ${week}주차`
+}
+
+export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isLoginMode, setIsLoginMode] = useState(true)
+  const [operatorCode, setOperatorCode] = useState('')
+  const [password, setPassword] = useState('')
+
+  const [activeTab, setActiveTab] = useState('dashboard')
+
+  const [layouts, setLayouts] = useState<ResponsiveLayouts>(defaultLayouts)
+  const [visibleWidgets, setVisibleWidgets] = useState<Record<WidgetId, boolean>>({
+    activeUsers: true,
+    riskUsers: true,
+    alertFeed: true,
+    hourlyTrend: true,
+    sessionTable: true,
+  })
+
+  useEffect(() => {
+    const savedLayouts = localStorage.getItem(LAYOUTS_STORAGE_KEY)
+    if (savedLayouts) {
+      try { setLayouts(JSON.parse(savedLayouts)) } catch (e) { console.error('Failed to parse layouts:', e) }
+    }
+    const savedVisible = localStorage.getItem(VISIBLE_STORAGE_KEY)
+    if (savedVisible) {
+      try { setVisibleWidgets(JSON.parse(savedVisible)) } catch (e) { console.error('Failed to parse visible widgets:', e) }
+    }
+  }, [])
+
+  const handleLayoutChange = (_: any, allLayouts: ResponsiveLayouts) => {
+    setLayouts(allLayouts)
+    localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(allLayouts))
+  }
+
+  const toggleWidget = (id: WidgetId) => {
+    const newVisible = { ...visibleWidgets, [id]: !visibleWidgets[id] }
+    setVisibleWidgets(newVisible)
+    localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(newVisible))
+  }
+
+  const resetDashboard = () => {
+    setLayouts(defaultLayouts)
+    localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(defaultLayouts))
+    const allVisible = { activeUsers: true, riskUsers: true, alertFeed: true, hourlyTrend: true, sessionTable: true }
+    setVisibleWidgets(allVisible)
+    localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(allVisible))
+  }
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (operatorCode === 'ABC-123' && password === 'admin') setIsLoggedIn(true)
+    else alert('운영자 코드 또는 비밀번호가 올바르지 않습니다. (ABC-123 / admin)')
+  }
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (operatorCode !== 'ABC-123') { alert('유효하지 않은 운영자 코드입니다.'); return; }
+    alert('회원가입이 완료되었습니다. 로그인해 주세요.')
+    setIsLoginMode(true)
+    setPassword('')
+    setOperatorCode('')
+  }
+
+  const [riskUsersState, setRiskUsersState] = useState<RiskUser[]>(initialRiskUsers)
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
-  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false)
-  const [riskUsers, setRiskUsers] = useState<RiskUser[]>(initialRiskUsers)
-  const [memberSearchQuery, setMemberSearchQuery] = useState('')
-  const [expandedLiveUsers, setExpandedLiveUsers] = useState<string[]>([])
+
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
   const [statStartDate, setStatStartDate] = useState('2026-04-04')
   const [statEndDate, setStatEndDate] = useState('2026-04-11')
-  
-  const getWeekStr = (dateStr: string) => {
-    const date = new Date(dateStr); const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())); const dayNum = d.getUTCDay() || 7
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-    return `${d.getUTCFullYear()}-W${String(Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)).padStart(2, '0')}`
+
+  const [membersQuery, setMembersQuery] = useState('')
+  const [membersTeamFilter, setMembersTeamFilter] = useState('all')
+  const [email, setEmail] = useState('')
+  const [team, setTeam] = useState('운수팀 A')
+  const [showAddMember, setShowAddMember] = useState(false)
+
+  const [alertFilterStartDate, setAlertFilterStartDate] = useState('2026-04-04')
+  const [alertFilterEndDate, setAlertFilterEndDate] = useState('2026-04-11')
+  const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
+
+  const handleExport = () => {
+    const csvContent = "data:text/csv;charset=utf-8,Date,Time,User,Team,Level,Note\n" 
+      + alertItems.map(a => `${a.date},${a.time},${a.user},${a.team},${a.level},${a.note}`).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "alerts_export.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
-  const getWeekOfMonthStr = (dateStr: string) => {
-    const date = new Date(dateStr); const year = date.getFullYear(); const month = date.getMonth() + 1; const day = date.getDate(); const firstDay = new Date(year, date.getMonth(), 1).getDay()
-    return `${year}-${month}월 ${Math.ceil((day + (firstDay === 0 ? 6 : firstDay - 1)) / 7)}주차`
-  }
-  
-  const [alertFilterStartDate, setAlertFilterStartDate] = useState('2026-04-04'); const [alertFilterEndDate, setAlertFilterEndDate] = useState('2026-04-11'); const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all'); const [selectedStatGroup, setSelectedStatGroup] = useState<{ key: string, items: AlertItem[] } | null>(null)
-  
-  useEffect(() => { window.localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(layouts)) }, [layouts])
-  useEffect(() => { window.localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(visibleWidgets)) }, [visibleWidgets])
-  
-  const hiddenCount = widgetOrder.length - visibleWidgets.length
-  
-  function handleLayoutChange(_currentLayout: Layout, allLayouts: ResponsiveLayouts) {
-    setLayouts((prevLayouts) => {
-      const updatedLayouts = { ...prevLayouts }
-      Object.keys(allLayouts).forEach((breakpoint) => {
-        const bp = breakpoint as keyof ResponsiveLayouts; const newBpLayout = allLayouts[bp] || []; const prevBpLayout = prevLayouts[bp] || []; const merged = [...prevBpLayout]
-        newBpLayout.forEach((newItem) => {
-          const index = merged.findIndex((item) => item.i === newItem.i); let finalItem = { ...newItem }
-          if (newItem.w === 1 && newItem.h === 1) { const defaultItem = defaultLayouts[bp]?.find((item) => item.i === newItem.i); if (defaultItem) { finalItem = { ...newItem, w: defaultItem.w, h: defaultItem.h, minW: defaultItem.w, minH: defaultItem.h } } }
-          if (index > -1) { const prevItem = merged[index]; if (!(newItem.w === 1 && newItem.h === 1 && (prevItem.w > 1 || prevItem.h > 1))) { merged[index] = finalItem } } else { merged.push(finalItem) }
-        }); updatedLayouts[bp] = merged
-      }); return updatedLayouts
-    })
-  }
-  
-  function toggleWidget(widgetId: WidgetId) {
-    setVisibleWidgets((currentWidgets) => {
-      if (!currentWidgets.includes(widgetId)) {
-        setLayouts((prevLayouts) => {
-          const updated = { ...prevLayouts }; Object.keys(defaultLayouts).forEach((breakpoint) => {
-            const bp = breakpoint as keyof ResponsiveLayouts
-            if (!(updated[bp] || []).some(item => item.i === widgetId)) { const defaultItem = defaultLayouts[bp]?.find(item => item.i === widgetId); if (defaultItem) { updated[bp] = [...(updated[bp] || []), defaultItem] } }
-          }); return updated
-        }); return [...currentWidgets, widgetId]
-      }
-      if (currentWidgets.length === 1) return currentWidgets; return currentWidgets.filter(id => id !== widgetId)
-    })
-  }
-  
-  function resetBoard() { setLayouts(defaultLayouts); setVisibleWidgets(widgetOrder); window.localStorage.removeItem(LAYOUTS_STORAGE_KEY); window.localStorage.removeItem(VISIBLE_STORAGE_KEY) }
-  
-  if (!isLoggedIn) return <LoginPage onLogin={() => setIsLoggedIn(true)} />
-  
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar__brand">
-          <div className="sidebar__badge"><ShieldAlert size={18} /></div>
-          <div><strong>Eye:on Admin</strong></div>
+
+  if (!isLoggedIn) {
+    return (
+      <div className="flex min-h-screen bg-slate-50 items-center justify-center p-4">
+        <div className="w-full max-w-md p-8 bg-white border border-slate-200 rounded-3xl shadow-xl flex flex-col items-center">
+          <div className="grid w-16 h-16 place-items-center bg-slate-900 rounded-2xl text-white mb-6 shadow-md">
+            <Lock size={32} />
+          </div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Eye:on Admin</h1>
+          <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Secure Access Portal</p>
+          
+          <div className="flex w-full bg-slate-100 rounded-xl p-1 mb-8 mt-6">
+            <button type="button" onClick={() => setIsLoginMode(true)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>로그인</button>
+            <button type="button" onClick={() => setIsLoginMode(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>운영자 등록</button>
+          </div>
+          
+          {isLoginMode ? (
+            <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
+              <input type="text" placeholder="운영자 코드" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="password" placeholder="비밀번호" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">로그인</button>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="w-full flex flex-col gap-4">
+              <input type="text" placeholder="관리자 부여 조직 코드" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="email" placeholder="이메일" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="password" placeholder="사용할 비밀번호" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform">등록 요청</button>
+            </form>
+          )}
         </div>
-        <nav className="sidebar__nav">
-          {navigationItems.map(({ id, label, icon: Icon }) => (
-            <button key={id} type="button" className={`sidebar__nav-item${activeTab === id ? ' is-active' : ''}`} onClick={() => setActiveTab(id)}>
-              <Icon size={18} /><span>{label}</span><ChevronRight size={14} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] min-h-screen bg-slate-50">
+      {/* Sidebar - Dark Figma Theme */}
+      <aside className="sticky top-0 flex flex-col h-screen p-6 bg-slate-950 text-slate-300 border-r border-slate-800 z-10 overflow-y-auto">
+        <div className="flex items-center gap-3 pb-6 mb-2 border-b border-slate-800">
+          <div className="grid w-10 h-10 place-items-center rounded-xl bg-blue-600 text-white shadow-[0_4px_10px_rgba(37,99,235,0.3)]">
+            <ShieldAlert size={22} />
+          </div>
+          <div>
+            <strong className="block text-xl font-bold text-slate-100 leading-none">Eye:on</strong>
+            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mt-1">Admin Portal</span>
+          </div>
+        </div>
+
+        <nav className="flex flex-col gap-1 mt-4">
+          {navigationItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-medium text-left ${activeTab === item.id ? 'bg-blue-500/15 text-blue-400 font-bold' : 'hover:bg-white/5 hover:text-slate-100'}`}
+            >
+              <item.icon size={20} strokeWidth={activeTab === item.id ? 2.5 : 2} />
+              {item.label}
             </button>
           ))}
-          <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
-            <button type="button" className={`sidebar__nav-item${activeTab === 'account' ? ' is-active' : ''}`} onClick={() => setActiveTab('account')}>
-              <UserCircle size={18} /><span>계정</span><ChevronRight size={14} />
-            </button>
-          </div>
         </nav>
-      </aside>
-      
-      <main className="workspace">
-        {activeTab === 'live' && (
-          <>
-            <header className="topbar">
-              <div className="topbar__copy">
-                <h1>실시간 모니터링</h1>
-              </div>
-            </header>
-            <section className="board-section" style={{ display: 'flex', gap: '24px', flex: 1, padding: '24px', overflow: 'hidden' }}>
-              <div className="widget-stack" style={{ flex: 2, background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <h2 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Wifi size={20} color="#10b981" /> 현재 활성 세션</h2>
-                  <span style={{ background: '#ecfdf5', color: '#059669', padding: '4px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>{riskUsers.length}명 접속 중</span>
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                    {riskUsers.map(user => {
-                      const sessionAlerts = alertItems.filter(a => a.user === user.name && a.date === '2026-04-11')
-                      const isExpanded = expandedLiveUsers.includes(user.name)
-                      return (
-                      <article key={user.name} style={{ padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <div>
-                            <strong style={{ fontSize: '1.1rem' }}>{user.name}</strong>
-                            <span style={{ display: 'block', fontSize: '0.85rem', color: '#6b7280', marginTop: '4px' }}>{user.team}</span>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                            <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>세션 시간</span>
-                            <strong style={{ fontFamily: 'monospace' }}>{String(user.name.length % 3).padStart(2, '0')}:{String((user.alertCount * 7 + user.sessionsToday) % 60).padStart(2, '0')}:{String((user.sessionsToday * 13 + user.name.length * 5) % 60).padStart(2, '0')}</strong>
-                          </div>
-                        </div>
-                        <div style={{ height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.min(sessionAlerts.length * 10, 100)}%`, height: '100%', background: sessionAlerts.length >= 5 ? '#ef4444' : sessionAlerts.length >= 2 ? '#f59e0b' : '#10b981' }} />
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', alignItems: 'center' }}>
-                          <span style={{ color: '#6b7280' }}>이번 세션 알림</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <strong>{sessionAlerts.length}건</strong>
-                            <button type="button" className="ghost-button" style={{ padding: '4px', height: 'auto' }} onClick={() => setExpandedLiveUsers(prev => prev.includes(user.name) ? prev.filter(n => n !== user.name) : [...prev, user.name])}>
-                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </button>
-                          </div>
-                        </div>
-                        {isExpanded && sessionAlerts.length > 0 && (
-                          <div style={{ borderTop: '1px dashed #e5e7eb', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {sessionAlerts.map((a, i) => (
-                              <div key={i} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: a.level === 'L2' ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>{a.level === 'L1' ? '졸음' : '수면'}</span>
-                                <span style={{ color: '#6b7280' }}>{a.time} 발생 {a.status === '종료됨' ? '(해제됨)' : <strong style={{ color: '#ef4444' }}>(진행중)</strong>}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {isExpanded && sessionAlerts.length === 0 && (
-                          <div style={{ borderTop: '1px dashed #e5e7eb', paddingTop: '12px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center' }}>
-                            이번 세션 발생 알림 없음
-                          </div>
-                        )}
-                      </article>
-                    )})}
-                  </div>
-                </div>
-              </div>
 
-              <div className="widget-stack" style={{ flex: 1, background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '24px', display: 'flex', flexDirection: 'column', borderColor: alertItems.some(a => a.status === '진행중') ? '#fca5a5' : '#e5e7eb', boxShadow: alertItems.some(a => a.status === '진행중') ? '0 0 0 2px rgba(239,68,68,0.2)' : 'none' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <h2 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><BellRing size={20} color="#ef4444" className="pulse-icon" /> 긴급/실시간 알림</h2>
-                  <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>{alertItems.filter(a => a.status === '진행중').length}건 진행중</span>
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px' }}>
-                  {alertItems.filter(a => a.status === '진행중').map((item, i) => (
-                    <article key={i} className="feed-row" style={{ margin: 0, border: '1px solid #fecaca', background: '#fff5f5' }}>
-                      <div className="feed-row__head">
-                        <div><strong>{item.user}</strong><span>{item.team}</span></div>
-                        <span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span>
-                      </div>
-                      <p className="feed-row__note" style={{ color: '#991b1b', fontWeight: 500 }}>{item.note}</p>
-                      <div className="feed-row__meta">
-                        <span>발생: {item.time}</span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ef4444', fontWeight: 'bold' }}><Activity size={12} className="pulse-icon" /> 조치 대기중</span>
-                      </div>
-                    </article>
-                  ))}
-                  {alertItems.filter(a => a.status === '진행중').length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>현재 진행중인 실시간 알림이 없습니다.</div>
-                  )}
-                </div>
-              </div>
-            </section>
-          </>
-        )}
+        <div className="mt-auto">
+          <button onClick={() => setActiveTab('account')} className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-medium text-left border border-slate-800 ${activeTab === 'account' ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-900 hover:bg-white/5 hover:text-slate-100'}`}>
+            <div className="grid w-8 h-8 place-items-center rounded-lg bg-slate-800 text-slate-300">
+              <UserCircle size={18} />
+            </div>
+            <div>
+              <span className="block text-sm text-slate-100 font-bold leading-none">관리자</span>
+              <span className="text-xs text-slate-500">admin@eyeon.com</span>
+            </div>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Workspace - Light Figma Theme */}
+      <main className="p-4 md:p-8 overflow-y-auto text-slate-900 h-screen max-w-[1600px] mx-auto w-full">
         {activeTab === 'dashboard' && (
           <>
-            <header className="topbar">
-              <div className="topbar__copy">
-                <h1>통합 관제 대시보드</h1>
+            <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">대시보드</h1>
+                <p className="text-sm font-medium text-slate-500 m-0">실시간 모니터링 및 시스템 현황 요약</p>
               </div>
-              <div className="topbar__controls"><button type="button" className={`ghost-button${editMode ? ' is-active' : ''}`} onClick={() => setEditMode(!editMode)}><SquarePen size={16} />{editMode ? '편집 종료' : '편집 모드'}</button><button type="button" className="ghost-button" onClick={resetBoard}><RotateCcw size={16} />레이아웃 초기화</button></div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
+                  <Clock3 size={16} /> {new Date('2026-04-11T13:00:00').toLocaleString('ko-KR')} 기준
+                </div>
+                <button onClick={resetDashboard} className="flex items-center gap-2 h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors">
+                  <RotateCcw size={16} /> 위젯 초기화
+                </button>
+              </div>
             </header>
-            <section className="hero-strip">
-              <SummaryCard icon={Wifi} label="현재 활성 사용자" value={riskUsers.length.toString()} detail="전체 등록 인원 기준" />
-              <SummaryCard icon={ShieldAlert} label="오늘 위험 사용자" value={riskUsers.filter(u => u.alertCount >= 5).length.toString()} detail="금일 알림 5회 이상" />
-              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
-              <SummaryCard icon={Activity} label="완전 실시간 알림" value={alertItems.filter(a => a.status === '진행중').length.toString()} detail="앱에서 미종료된 실시간 알림" />
-            </section>
-            <section className="board-section">
-              <div className="board-section__header"><div><h2>전체 조직</h2></div><div className="board-section__meta"><span>{editMode ? '위젯 이동/크기 변경 가능' : '읽기 모드'}</span><span>{hiddenCount > 0 ? `숨김 ${hiddenCount}개` : '전체 표시 중'}</span></div></div>
-              {editMode && (<section className="widget-library">{widgetOrder.map((id) => (<button key={id} type="button" className={`widget-library__chip${visibleWidgets.includes(id) ? ' is-on' : ''}`} onClick={() => toggleWidget(id)}><span>{widgetMeta[id].title}</span><small>{visibleWidgets.includes(id) ? '표시 중' : '숨김'}</small></button>))}</section>)}
-              <ResponsiveGridLayout className={`workspace-board${editMode ? ' is-editing' : ''}`} layouts={layouts} breakpoints={{ lg: 1000, md: 800, sm: 640, xs: 480, xxs: 0 }} cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }} rowHeight={40} margin={[16, 16]} containerPadding={[0, 0]} draggableHandle=".widget-shell__header" isDraggable={editMode} isResizable={editMode} onLayoutChange={handleLayoutChange}>
-                {visibleWidgets.map((id) => (<div key={id} data-grid={defaultLayouts.lg?.find(l => l.i === id)}><WidgetShell meta={widgetMeta[id]} editMode={editMode}>{renderWidget(id, setActiveTab, (name) => { setActiveTab('members'); setSelectedUserForDetail(name); }, riskUsers)}</WidgetShell></div>))}
-              </ResponsiveGridLayout>
-            </section>
+
+            <div className="mb-6 p-5 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-slate-900 m-0">대시보드 위젯 설정</h2>
+                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">{Object.values(visibleWidgets).filter(v => v).length}개 활성화됨</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {widgetOrder.map(id => (
+                  <button
+                    key={id}
+                    onClick={() => toggleWidget(id)}
+                    className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold transition-all ${visibleWidgets[id] ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${visibleWidgets[id] ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
+                    {widgetMeta[id].title}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <ResponsiveGridLayout
+              className="min-h-[400px]"
+              layouts={layouts}
+              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+              cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+              rowHeight={30}
+              onLayoutChange={handleLayoutChange}
+              draggableHandle=".drag-handle"
+              isDraggable={true}
+              isResizable={true}
+              compactType={null}
+              preventCollision={false}
+              margin={[16, 16]}
+            >
+              {widgetOrder.filter(id => visibleWidgets[id]).map(id => (
+                <div key={id} data-grid={defaultLayouts.lg?.find(l => l.i === id)} className="flex flex-col bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden group">
+                  <div className="drag-handle flex items-center justify-between p-3 border-b border-slate-50 bg-slate-50/50 cursor-move">
+                    <h3 className="text-sm font-bold text-slate-700 m-0 flex items-center gap-2"><Move size={14} className="text-slate-400" /> {widgetMeta[id].title}</h3>
+                    <button onClick={() => toggleWidget(id)} className="text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity p-1">✕</button>
+                  </div>
+                  <div className="flex-1 overflow-auto p-4 custom-scrollbar">
+                    {id === 'activeUsers' && (
+                      <div className="flex flex-col gap-4 h-full">
+                        <div className="flex-1 p-6 rounded-2xl bg-gradient-to-br from-blue-900 to-blue-700 text-white shadow-lg shadow-blue-900/20 flex flex-col justify-center items-center text-center">
+                          <p className="text-base font-bold text-blue-200 m-0 mb-2">실시간 모니터링 인원</p>
+                          <strong className="text-6xl font-black">{riskUsersState.length}명</strong>
+                        </div>
+                      </div>
+                    )}
+                    {id === 'riskUsers' && (
+                      <div className="flex flex-col gap-2">
+                        {riskUsersState.slice(0, 5).map(u => (
+                          <button key={u.name} onClick={() => setSelectedUserForDetail(u.name)} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all text-left w-full">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-2 h-2 rounded-full ${u.alertCount >= 5 ? 'bg-red-500' : u.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                              <div>
+                                <strong className="block text-sm font-bold text-slate-900 leading-none mb-1">{u.name}</strong>
+                                <span className="text-xs text-slate-500">{u.team}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Alerts</span>
+                              <strong className={`text-sm font-black ${u.alertCount > 0 ? 'text-red-500' : 'text-slate-500'}`}>{u.alertCount}</strong>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {id === 'alertFeed' && (
+                      <div className="flex flex-col gap-3">
+                        {alertItems.slice(0, 4).map((a, i) => (
+                          <div key={i} className="p-3 border border-slate-100 rounded-xl bg-white shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider ${a.level === 'L1' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                  {a.level}
+                                </span>
+                                <strong className="text-sm text-slate-900">{a.user}</strong>
+                              </div>
+                              <span className="text-xs font-bold text-slate-400">{a.time}</span>
+                            </div>
+                            <p className="m-0 text-sm text-slate-600">{a.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {id === 'hourlyTrend' && (
+                      <div className="flex flex-col h-full">
+                        <div className="flex justify-between items-center mb-4">
+                          <span className="text-xs font-bold text-slate-500">피크 시간: 22:00</span>
+                          <span className="text-xs font-bold text-slate-500">누적: {alertItems.length}건</span>
+                        </div>
+                        <div className="flex-1 min-h-[150px] relative w-full h-full">
+                          <ResponsiveContainer width="99%" height="100%" minHeight={150}>
+                            <LineChart data={hourlyTrendData}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} dy={10} />
+                              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                              <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                    {id === 'sessionTable' && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="text-xs text-slate-500 bg-slate-50">
+                            <tr><th className="p-3 font-bold rounded-tl-lg">상태</th><th className="p-3 font-bold">사용자</th><th className="p-3 font-bold">시간</th><th className="p-3 font-bold rounded-tr-lg">이용시간</th></tr>
+                          </thead>
+                          <tbody>
+                            {sessionRows.slice(0, 5).map((s, i) => (
+                              <tr key={i} className="border-b border-slate-50 last:border-0">
+                                <td className="p-3"><div className={`w-2 h-2 rounded-full ${s.alerts === '정상' ? 'bg-emerald-500' : 'bg-red-500'}`}></div></td>
+                                <td className="p-3 font-bold text-slate-900">{s.user}</td>
+                                <td className="p-3 text-slate-500">{s.startTime}</td>
+                                <td className="p-3 text-slate-500">{s.duration}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </ResponsiveGridLayout>
           </>
         )}
-        
-        {activeTab === 'members' && (
-          <>
-            <header className="topbar">
-              <div className="topbar__copy">
-                <h1>구성원 관리 시스템</h1>
+
+        {activeTab === 'live' && (
+          <div className="flex flex-col gap-6">
+            <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">실시간 모니터링</h1>
+                <p className="text-sm font-medium text-slate-500 m-0">현재 접속 중인 사용자의 상태를 실시간으로 확인합니다.</p>
               </div>
-            </header>
-            <section className="board-section">
-              <div className="board-section__header"><div><h2>전체 조직 구성원 목록</h2></div>
-                <div className="search-strip" style={{ marginBottom: 0 }}>
-                  <div className="search-strip__input"><Search size={16} /><input type="text" placeholder="이름 또는 부서 검색" value={memberSearchQuery} onChange={e => setMemberSearchQuery(e.target.value)} style={{ background: 'transparent', border: 'none', outline: 'none', color: 'inherit', width: '100%' }} /></div>
-                  <button type="button" className="ghost-button" style={{ background: '#0f3d3e', color: 'white', fontWeight: 600 }} onClick={() => setIsAddMemberModalOpen(true)}>구성원 추가</button>
+              <div className="flex gap-2">
+                <div className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl text-sm font-bold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 시스템 정상 가동 중
                 </div>
               </div>
-              <div className="table-shell">
-                <table>
-                  <thead><tr><th>사용자</th><th>소속</th><th>금일 세션 수</th><th>알림 발생 횟수</th><th>관리</th></tr></thead>
+            </header>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <SummaryCard icon={Activity} label="현재 모니터링 인원" value="25" detail="운전 18 / 학습 7" />
+              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
+              <SummaryCard icon={ShieldAlert} label="위험 사용자" value={riskUsersState.filter(u => u.alertCount >= 5).length.toString()} detail="즉시 조치 필요" />
+            </div>
+
+            <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <h2 className="text-lg font-black text-slate-900 mb-6">모니터링 목록 (25)</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {riskUsersState.map(user => (
+                  <button key={user.name} onClick={() => setSelectedUserForDetail(user.name)} className="flex flex-col p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:shadow-md transition-all text-left bg-white group">
+                    <div className="flex justify-between items-start mb-3 w-full">
+                      <div className={`px-2 py-1 rounded-md text-[10px] font-bold ${user.alertCount >= 5 ? 'bg-red-100 text-red-700' : user.alertCount >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {user.alertCount >= 5 ? '위험' : user.alertCount >= 2 ? '주의' : '정상'}
+                      </div>
+                    </div>
+                    <strong className="text-lg font-black text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{user.name}</strong>
+                    <span className="text-xs text-slate-500 mb-3">{user.team}</span>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-auto">
+                      <div className={`h-full ${user.alertCount >= 5 ? 'bg-red-500' : user.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(10, 100 - user.alertCount * 15)}%` }}></div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'members' && (
+          <div className="flex flex-col gap-6">
+            <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">구성원 관리</h1>
+                <p className="text-sm font-medium text-slate-500 m-0">조직 및 구성원 등록, 권한을 관리합니다.</p>
+              </div>
+              <button onClick={() => setShowAddMember(true)} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-colors">
+                + 구성원 추가
+              </button>
+            </header>
+
+            <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div className="flex flex-col md:flex-row gap-4 mb-6">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input type="text" placeholder="이름 또는 부서 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
+                </div>
+                <select value={membersTeamFilter} onChange={e => setMembersTeamFilter(e.target.value)} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium">
+                  <option value="all">모든 부서</option>
+                  {Array.from(new Set(riskUsersState.map(u => u.team))).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr><th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th><th className="p-4 font-bold border-b border-slate-100">부서</th><th className="p-4 font-bold border-b border-slate-100">상태</th><th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th></tr>
+                  </thead>
                   <tbody>
-                    {riskUsers.filter(u => u.name.includes(memberSearchQuery) || u.team.includes(memberSearchQuery)).map((user) => (
-                      <tr key={user.name}>
-                        <td><strong>{user.name}</strong></td><td>{user.team}</td><td>{user.sessionsToday}회</td>
-                        <td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '30px' }}>{user.alertCount}회</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${Math.min(user.alertCount * 10, 100)}%`, height: '100%', background: user.alertCount >= 5 ? '#ef4444' : user.alertCount >= 2 ? '#f59e0b' : '#10b981' }} /></div></div></td>
-                        <td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedUserForDetail(user.name)}>상세 정보</button></td>
+                    {riskUsersState.filter(u => (membersTeamFilter === 'all' || u.team === membersTeamFilter) && u.name.includes(membersQuery)).map(u => (
+                      <tr key={u.name} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4 font-bold text-slate-900">{u.name}</td>
+                        <td className="p-4 text-slate-600">{u.team}</td>
+                        <td className="p-4">
+                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100">활성</span>
+                        </td>
+                        <td className="p-4">
+                          <button onClick={() => setSelectedUserForDetail(u.name)} className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 rounded-lg text-xs font-bold transition-colors shadow-sm">
+                            상세 정보
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </section>
-          </>
+            </div>
+          </div>
         )}
-        
-        {activeTab === 'alerts' && (() => {
-          const filtered = alertItems.filter(item => {
-            const time = new Date(item.date).getTime(); const start = new Date(alertFilterStartDate).getTime(); const end = new Date(alertFilterEndDate).getTime()
-            if (time < start || time > end) return false; if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) return false; return true
-          })
-          const handleExport = () => {
-            const headers = ['날짜', '발생 시간', '사용자', '소속', '알림 단계', '상세 내용']; const rows = filtered.map(a => [a.date, a.time, a.user, a.team, a.level, a.note])
-            const csv = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n"); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-            const link = document.createElement("a"); link.href = url; link.download = `alerts_${alertFilterStartDate}.csv`; link.click()
-          }
-          return (
-            <>
-              <header className="topbar">
-                <div className="topbar__copy">
-                  <h1>졸음 및 위험 감지 로그</h1>
+
+        {activeTab === 'alerts' && (
+          <div className="flex flex-col gap-6">
+            <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">알림 기록</h1>
+                <p className="text-sm font-medium text-slate-500 m-0">과거부터 현재까지의 모든 알림 내역을 조회합니다.</p>
+              </div>
+              <button onClick={handleExport} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-colors text-sm">
+                CSV 내보내기
+              </button>
+            </header>
+
+            <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div className="flex flex-wrap gap-4 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100 items-center">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-bold text-slate-600">기간:</label>
+                  <input type="date" value={alertFilterStartDate} onChange={e => setAlertFilterStartDate(e.target.value)} className="px-3 py-1.5 border border-slate-200 rounded-lg outline-none text-sm font-medium bg-white" />
+                  <span className="text-slate-400">~</span>
+                  <input type="date" value={alertFilterEndDate} onChange={e => setAlertFilterEndDate(e.target.value)} className="px-3 py-1.5 border border-slate-200 rounded-lg outline-none text-sm font-medium bg-white" />
                 </div>
-              </header>
-              <section className="board-section">
-                <div className="board-section__header"><div><h2>전체 조직 알림 로그</h2></div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button type="button" className="ghost-button" onClick={() => { setAlertFilterStartDate('2026-04-11'); setAlertFilterEndDate('2026-04-11'); }}>오늘</button>
-                    <button type="button" className="ghost-button" onClick={() => { setAlertFilterStartDate('2026-04-04'); setAlertFilterEndDate('2026-04-11'); }}>최근 7일</button>
-                    <button type="button" className="ghost-button" onClick={() => { setAlertFilterStartDate('2026-04-01'); setAlertFilterEndDate('2026-04-30'); }}>이번 달</button>
-                    <button type="button" className="ghost-button" onClick={() => { setAlertFilterStartDate('2026-01-01'); setAlertFilterEndDate('2026-12-31'); }}>올해</button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-bold text-slate-600">단계:</label>
+                  <select value={alertFilterLevel} onChange={e => setAlertFilterLevel(e.target.value as any)} className="px-3 py-1.5 border border-slate-200 rounded-lg outline-none text-sm font-medium bg-white">
+                    <option value="all">전체</option>
+                    <option value="L1">1단계 (졸음)</option>
+                    <option value="L2">2단계 (수면)</option>
+                  </select>
                 </div>
-                <div className="search-strip" style={{ padding: '12px 0', gap: '16px', borderBottom: '1px solid #e5e7eb' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><label style={{ fontSize: '0.9rem', fontWeight: 500 }}>조회 기간:</label><input type="date" value={alertFilterStartDate} onChange={e => setAlertFilterStartDate(e.target.value)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }} /><span>~</span><input type="date" value={alertFilterEndDate} onChange={e => setAlertFilterEndDate(e.target.value)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }} /></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><label style={{ fontSize: '0.9rem', fontWeight: 500 }}>단계:</label><select value={alertFilterLevel} onChange={e => setAlertFilterLevel(e.target.value as any)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}><option value="all">모든 단계</option><option value="L1">졸음</option><option value="L2">수면</option></select></div>
-                  <button type="button" className="ghost-button" style={{ marginLeft: 'auto', background: '#eee', color: '#000', fontWeight: 600 }} onClick={handleExport}>내보내기 (CSV)</button>
-                </div>
-                <div className="table-shell"><table><thead><tr><th>날짜</th><th>발생 시간</th><th>사용자</th><th>소속</th><th>알림 단계</th><th>상세 내용</th></tr></thead><tbody>{filtered.length > 0 ? filtered.map((item, i) => (<tr key={i}><td>{item.date}</td><td>{item.time}</td><td><strong>{item.user}</strong></td><td>{item.team}</td><td><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span></td><td>{item.note}</td></tr>)) : <tr><td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#6b7280' }}>해당 조건에 맞는 알림이 없습니다.</td></tr>}</tbody></table></div>
-              </section>
-            </>
-          )
-        })()}
-        
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr><th className="p-4 font-bold border-b border-slate-100">일시</th><th className="p-4 font-bold border-b border-slate-100">사용자</th><th className="p-4 font-bold border-b border-slate-100">소속</th><th className="p-4 font-bold border-b border-slate-100">단계</th><th className="p-4 font-bold border-b border-slate-100">내용</th></tr>
+                  </thead>
+                  <tbody>
+                    {alertItems.filter(item => {
+                      const t = new Date(item.date).getTime()
+                      const start = new Date(alertFilterStartDate).getTime()
+                      const end = new Date(alertFilterEndDate).getTime()
+                      if (t < start || t > end) return false
+                      if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) return false
+                      return true
+                    }).map((item, i) => (
+                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4 text-slate-600 whitespace-nowrap">{item.date} {item.time}</td>
+                        <td className="p-4 font-bold text-slate-900">{item.user}</td>
+                        <td className="p-4 text-slate-600">{item.team}</td>
+                        <td className="p-4">
+                          <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-black tracking-wider ${item.level === 'L1' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                            {item.level === 'L1' ? '졸음' : '수면'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-slate-600">{item.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'statistics' && (() => {
           const filtered = alertItems.filter(item => {
             if (statType === 'hourly' || statType === 'daily') { const t = new Date(item.date).getTime(); return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime()) }
@@ -576,7 +682,7 @@ function App() {
           })
           const grouped = filtered.reduce((acc, item) => {
             let key = ''
-            if (statType === 'hourly') { const h = parseInt(item.time.split(':')[0]); key = `${item.date} ${String(h).padStart(2, '0')}:00 ~ ${String(h + 1).padStart(2, '0')}:00` }
+            if (statType === 'hourly') { const h = parseInt(item.time.split(':')[0]); key = `${item.date} ${String(h).padStart(2, '0')}:00` }
             else if (statType === 'daily') { key = item.date }
             else if (statType === 'weekly') { key = getWeekOfMonthStr(item.date) }
             else if (statType === 'monthly') { key = `${item.date.substring(0, 4)}-${item.date.substring(5, 7)}월` }
@@ -584,179 +690,209 @@ function App() {
             if (!acc[key]) acc[key] = { key, total: 0, l1: 0, l2: 0, items: [] }
             acc[key].total++; if (item.level === 'L1') acc[key].l1++; if (item.level === 'L2') acc[key].l2++; acc[key].items.push(item); return acc
           }, {} as Record<string, any>)
-          const statResult = Object.values(grouped).sort((a: any, b: any) => b.key.localeCompare(a.key)); const statMax = Math.max(...statResult.map((r: any) => r.total), 1)
+          
+          const statResult = Object.values(grouped).sort((a: any, b: any) => a.key.localeCompare(b.key)); 
+          const chartData = statResult.map(r => ({
+            name: statType === 'hourly' ? r.key.split(' ')[1] : statType === 'monthly' ? r.key : r.key.split('-').pop(),
+            l1: r.l1,
+            l2: r.l2,
+            total: r.total
+          }))
+
+          const totalSessions = sessionRows.filter(s => { const t = new Date(s.date).getTime(); return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime()) }).length;
+          const totalAlerts = filtered.length;
+          const totalL1 = filtered.filter(a => a.level === 'L1').length;
+          const totalL2 = filtered.filter(a => a.level === 'L2').length;
+          const riskUsersStats = Object.entries(filtered.reduce((acc, a) => { acc[a.user] = (acc[a.user] || 0) + 1; return acc; }, {} as Record<string, number>)).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
           return (
-            <>
-              <header className="topbar">
-                <div className="topbar__copy">
-                  <h1>졸음 발생 패턴 및 통계 분석</h1>
+            <div className="flex flex-col gap-6">
+              <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">분석</h1>
+                  <p className="text-sm font-medium text-slate-500 m-0">졸음 감지 데이터 분석 및 인사이트</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                  {['hourly', 'daily', 'weekly', 'monthly', 'yearly'].map(type => (
+                    <button 
+                      key={type}
+                      type="button" 
+                      className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-all ${statType === type ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} 
+                      onClick={() => { 
+                        setStatType(type as any); 
+                        if(type==='yearly') {setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31')}
+                        else if(type==='monthly') {setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31')}
+                        else {setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11')}
+                      }}>
+                      {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
+                    </button>
+                  ))}
+                  <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
+                  <input type="date" value={statStartDate} onChange={e => setStatStartDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
+                  <span className="text-slate-400">~</span>
+                  <input type="date" value={statEndDate} onChange={e => setStatEndDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
                 </div>
               </header>
-              <section className="board-section">
-                <div className="board-section__header"><div><h2>상세 통계 데이터</h2></div>
-                  <div className="search-strip" style={{ background: 'none', border: 'none', padding: 0 }}>
-                    <button type="button" className={`ghost-button${statType === 'hourly' ? ' is-active' : ''}`} onClick={() => { setStatType('hourly'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>시간대</button>
-                    <button type="button" className={`ghost-button${statType === 'daily' ? ' is-active' : ''}`} onClick={() => { setStatType('daily'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>일</button>
-                    <button type="button" className={`ghost-button${statType === 'weekly' ? ' is-active' : ''}`} onClick={() => { setStatType('weekly'); setStatStartDate('2026-W10'); setStatEndDate('2026-W15'); }}>주</button>
-                    <button type="button" className={`ghost-button${statType === 'monthly' ? ' is-active' : ''}`} onClick={() => { setStatType('monthly'); setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31'); }}>월</button>
-                    <button type="button" className={`ghost-button${statType === 'yearly' ? ' is-active' : ''}`} onClick={() => { setStatType('yearly'); setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31'); }}>년</button>
-                  </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                  <p className="text-sm font-bold text-slate-500 mb-2">해당 기간 총 세션</p>
+                  <p className="text-3xl font-black text-slate-900 m-0">{totalSessions}</p>
                 </div>
-                <div className="widget-stack" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', marginTop: '16px' }}>
-                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '24px' }}><label style={{ fontSize: '0.9rem', fontWeight: 500 }}>조회 기간:</label>
-                    {(() => {
-                      const style = { padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }
-                      if (statType === 'hourly' || statType === 'daily') return <><input type="date" value={statStartDate} onChange={e => setStatStartDate(e.target.value)} style={style} /><span>~</span><input type="date" value={statEndDate} onChange={e => setStatEndDate(e.target.value)} style={style} /></>
-                      if (statType === 'weekly') return <><input type="week" value={statStartDate.includes('W') ? statStartDate : getWeekStr(statStartDate)} onChange={e => setStatStartDate(e.target.value)} style={style} /><span>~</span><input type="week" value={statEndDate.includes('W') ? statEndDate : getWeekStr(statEndDate)} style={style} /></>
-                      if (statType === 'monthly') return <><input type="month" value={statStartDate.substring(0, 7)} onChange={e => setStatStartDate(e.target.value + '-01')} style={style} /><span>~</span><input type="month" value={statEndDate.substring(0, 7)} onChange={e => setStatEndDate(e.target.value + '-01')} style={style} /></>
-                      return <><select value={statStartDate.substring(0, 4)} onChange={e => setStatStartDate(e.target.value + '-01-01')} style={style}>{['2024','2025','2026'].map(y => <option key={y} value={y}>{y}년</option>)}</select><span>~</span><select value={statEndDate.substring(0, 4)} onChange={e => setStatEndDate(e.target.value + '-01-01')} style={style}>{['2024','2025','2026'].map(y => <option key={y} value={y}>{y}년</option>)}</select></>
-                    })()}
-                    <button type="button" className="ghost-button" style={{ background: '#eee', color: '#000', fontWeight: 600 }}>적용</button>
-                    <button type="button" className="ghost-button" onClick={() => { setStatType('hourly'); setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11'); }}>초기화</button>
-                  </div>
-                  {statResult.length > 0 ? (<div className="table-shell"><table><thead><tr><th>기준</th><th>총 알림 수</th><th>졸음</th><th>수면</th><th>발생 비율</th><th>관리</th></tr></thead><tbody>{statResult.map((row: any) => { const p = Math.round((row.total / statMax) * 100); return <tr key={row.key}><td>{row.key}</td><td><strong>{row.total}건</strong></td><td>{row.l1}건</td><td>{row.l2}건</td><td><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={{ minWidth: '40px' }}>{p}%</span><div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}><div style={{ width: `${p}%`, height: '100%', background: p > 50 ? '#ef4444' : '#f59e0b' }} /></div></div></td><td><button type="button" className="ghost-button" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => setSelectedStatGroup({ key: row.key, items: row.items })}>알림 확인</button></td></tr> })}</tbody></table></div>) : <div style={{ padding: '32px', textAlign: 'center', background: '#f9fafb', color: '#6b7280' }}>조건에 맞는 데이터가 없습니다.</div>}
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                  <p className="text-sm font-bold text-slate-500 mb-2">1단계 졸음</p>
+                  <p className="text-3xl font-black text-amber-500 m-0">{totalL1}</p>
                 </div>
-              </section>
-            </>
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                  <p className="text-sm font-bold text-slate-500 mb-2">2단계 졸음 (수면)</p>
+                  <p className="text-3xl font-black text-red-500 m-0">{totalL2}</p>
+                </div>
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                  <p className="text-sm font-bold text-slate-500 mb-2">전체 발생 알림</p>
+                  <p className="text-3xl font-black text-slate-900 m-0">{totalAlerts}</p>
+                </div>
+              </div>
+
+              {chartData.length > 0 ? (
+                <>
+                  <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-lg font-black text-slate-900 m-0">추이 분석 (Recharts)</h2>
+                      <div className="flex gap-4">
+                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">1단계 졸음</span></div>
+                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">2단계 졸음</span></div>
+                      </div>
+                    </div>
+                    <div className="w-full h-[300px] min-h-[300px] min-w-0">
+                      <ResponsiveContainer width="99%" height={300}>
+                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
+                          <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                          <Line type="monotone" dataKey="l1" name="1단계 졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                          <Line type="monotone" dataKey="l2" name="2단계 졸음 (수면)" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </section>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                      <h2 className="text-lg font-black text-slate-900 m-0 mb-4">데이터 테이블</h2>
+                      <div className="overflow-x-auto rounded-xl border border-slate-100">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-50 text-slate-500">
+                            <tr><th className="p-3 font-bold border-b border-slate-100">기준</th><th className="p-3 font-bold border-b border-slate-100">총 알림</th><th className="p-3 font-bold border-b border-slate-100">1단계</th><th className="p-3 font-bold border-b border-slate-100">2단계</th></tr>
+                          </thead>
+                          <tbody>
+                            {statResult.slice(0, 5).map((row: any) => (
+                              <tr key={row.key} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                <td className="p-3 font-bold text-slate-700">{statType === 'hourly' ? row.key.split(' ')[1] : row.key}</td>
+                                <td className="p-3 font-black text-slate-900">{row.total}</td>
+                                <td className="p-3 text-amber-600 font-bold">{row.l1}</td>
+                                <td className="p-3 text-red-600 font-bold">{row.l2}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+
+                    <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                      <h2 className="text-lg font-black text-slate-900 m-0 mb-4">주의가 필요한 사용자 Top 5</h2>
+                      <div className="flex flex-col gap-3">
+                        {riskUsersStats.map(([name, count], index) => {
+                          const userMeta = riskUsersState.find(u => u.name === name)
+                          return (
+                            <div key={name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                              <div className="flex items-center gap-3">
+                                <div className="grid w-8 h-8 place-items-center rounded-full bg-red-100 text-red-600 font-black text-sm">{index + 1}</div>
+                                <div>
+                                  <strong className="block text-sm font-bold text-slate-900">{name}</strong>
+                                  <span className="text-xs text-slate-500">{userMeta?.team || '알 수 없음'}</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">알림</span>
+                                <strong className="text-base font-black text-red-600 leading-none">{count}건</strong>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  </div>
+                </>
+              ) : <div className="p-12 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">해당 조건에 맞는 데이터가 없습니다.</div>}
+            </div>
           )
         })()}
         
         {activeTab === 'account' && (
-          <>
-            <header className="topbar">
-              <div className="topbar__copy">
-                <h1>계정 설정</h1>
-              </div>
+          <div className="flex flex-col gap-6">
+            <header className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">계정 설정</h1>
+              <p className="text-sm font-medium text-slate-500 m-0">계정 보안 및 접근 제어를 관리합니다.</p>
             </header>
-            <section className="board-section">
-              <div className="board-section__header"><div><h2>계정 보안 및 접근 제어</h2></div></div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginTop: '16px' }}>
-                <div className="widget-stack" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-                  <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>비밀번호 변경</h3>
-                  <form onSubmit={e => { e.preventDefault(); alert('비밀번호가 변경되었습니다.'); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>변경할 비밀번호</label><input type="password" placeholder="새 비밀번호" style={{ width: '100%', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e5e7eb' }} required /></div>
-                    <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>비밀번호 확인</label><input type="password" placeholder="비밀번호 재입력" style={{ width: '100%', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e5e7eb' }} required /></div>
-                    <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>조직 코드</label><input type="text" placeholder="ABC-123" style={{ width: '100%', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e5e7eb' }} required /></div>
-                    <button type="submit" className="ghost-button" style={{ background: '#0f3d3e', color: 'white', fontWeight: 600, height: '3rem' }}>변경 저장</button>
-                  </form>
-                </div>
-
-                <div className="widget-stack" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', height: 'fit-content' }}>
-                  <h3 style={{ marginBottom: '16px', fontSize: '1.1rem', color: '#d95d39' }}>시스템 로그아웃</h3>
-                  <button type="button" className="ghost-button" onClick={() => setIsLoggedIn(false)} style={{ color: '#d95d39', border: '1px solid #d95d39', fontWeight: 600, height: '3rem', width: '100%', justifyContent: 'center' }}>
-                    <LogOut size={18} style={{ marginRight: '8px' }} /> 로그아웃
-                  </button>
-                </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 mb-6">비밀번호 변경</h3>
+                <form onSubmit={e => { e.preventDefault(); alert('비밀번호가 변경되었습니다.'); }} className="flex flex-col gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">새 비밀번호</label>
+                    <input type="password" placeholder="새로운 비밀번호를 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">비밀번호 확인</label>
+                    <input type="password" placeholder="다시 한번 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">조직 코드</label>
+                    <input type="text" placeholder="인증을 위한 조직 코드를 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                  </div>
+                  <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform">변경 사항 저장</button>
+                </form>
               </div>
-            </section>
-          </>
+
+              <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit">
+                <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
+                <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
+                <button type="button" onClick={() => setIsLoggedIn(false)} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
+                  <LogOut size={18} /> 안전하게 로그아웃
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
-      
-      {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} riskUsers={riskUsers} onClose={() => setSelectedUserForDetail(null)} onDelete={() => { setRiskUsers(prev => prev.filter(u => u.name !== selectedUserForDetail)); setSelectedUserForDetail(null); }} onUpdate={(newTeam) => { setRiskUsers(prev => prev.map(u => u.name === selectedUserForDetail ? { ...u, team: newTeam } : u)); }} />}
-      {selectedStatGroup && <StatEventModal groupKey={selectedStatGroup.key} items={selectedStatGroup.items} onClose={() => setSelectedStatGroup(null)} />}
-      {isAddMemberModalOpen && <AddMemberModal onAdd={(email, team) => setRiskUsers(prev => [...prev, { name: email.split('@')[0], team, alertCount: 0, sessionsToday: 0 }])} onClose={() => setIsAddMemberModalOpen(false)} />}
+
+      {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} riskUsers={riskUsersState} alertItems={alertItems} sessionRows={sessionRows} onClose={() => setSelectedUserForDetail(null)} onDelete={() => { setRiskUsersState(prev => prev.filter(u => u.name !== selectedUserForDetail)) }} onUpdate={(team) => { setRiskUsersState(prev => prev.map(u => u.name === selectedUserForDetail ? { ...u, team } : u)) }} />}
+      {showAddMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-xl">
+            <header className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+              <h2 className="m-0 text-xl font-black text-slate-900">구성원 추가</h2>
+              <button type="button" onClick={() => setShowAddMember(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">닫기</button>
+            </header>
+            <div className="p-6">
+              <p className="text-sm text-slate-500 mb-6">새로운 구성원의 이메일과 소속을 입력하세요.</p>
+              <form onSubmit={e => { e.preventDefault(); alert(`${email} 구성원이 추가되었습니다.`); setShowAddMember(false); setEmail(''); }} className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">이메일</label>
+                  <input type="email" placeholder="user@eyeon.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">초기 소속 (팀)</label>
+                  <input type="text" placeholder="소속 팀 입력" value={team} onChange={e => setTeam(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                </div>
+                <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">구성원 추가 완료</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
-function renderWidget(id: WidgetId, setActiveTab: (tab: string) => void, onShow: (name: string) => void, riskUsers: RiskUser[]) {
-  switch (id) {
-    case 'activeUsers': return <ActiveUsersWidget riskUsers={riskUsers} />
-    case 'riskUsers': return <RiskUsersWidget onShowUserDetail={onShow} riskUsers={riskUsers} />
-    case 'alertFeed': return <AlertFeedWidget setActiveTab={setActiveTab} />
-    case 'hourlyTrend': return <HourlyTrendWidget />
-    case 'sessionTable': return <SessionTableWidget />
-    default: return null
-  }
-}
-
-function SummaryCard({ icon: Icon, label, value, detail }: { icon: LucideIcon, label: string, value: string, detail: string }) {
-  return (<article className="summary-card"><div className="summary-card__icon"><Icon size={24} /></div><div><p className="summary-card__label">{label}</p><strong className="summary-card__value">{value}</strong><p className="summary-card__detail">{detail}</p></div></article>)
-}
-
-function WidgetShell({ meta, editMode, children }: { meta: WidgetMeta, editMode: boolean, children: ReactNode }) {
-  if (!meta) return null
-  return (<section className="widget-shell"><header className="widget-shell__header" style={{ cursor: editMode ? 'grab' : 'default' }}><div><h3>{meta.title}</h3></div>{editMode && <div className="widget-shell__edit-pill"><Move size={14} />이동</div>}</header><div className="widget-shell__body">{children}</div></section>)
-}
-
-function ActiveUsersWidget({ riskUsers }: { riskUsers: RiskUser[] }) {
-  const highRisk = riskUsers.filter(u => u.alertCount >= 5).length
-  const caution = riskUsers.filter(u => u.alertCount >= 2 && u.alertCount < 5).length
-  const normal = riskUsers.length - highRisk - caution
-  return (<div className="widget-stack"><div className="hero-stat"><div><p className="hero-stat__label">조직 전체 등록 인원</p><strong className="hero-stat__value">{riskUsers.length}</strong></div><div className="hero-stat__badge">+2 from 1h ago</div></div>
-    <div className="metric-grid"><MetricItem label="정상" value={normal.toString()} tone="emerald" /><MetricItem label="졸음" value={caution.toString()} tone="sand" /><MetricItem label="수면" value={highRisk.toString()} tone="blue" /></div>
-    <div className="mini-panel"><div className="mini-panel__row"><span>오늘 신규 가입</span><strong>+18</strong></div><div className="mini-panel__row"><span>실시간 경고</span><strong>2</strong></div></div></div>)
-}
-
-function MetricItem({ label, value, tone }: { label: string, value: string, tone: 'blue' | 'sand' | 'emerald' }) { return (<div className={`metric-item metric-item--${tone}`}><span>{label}</span><strong>{value}</strong></div>) }
-
-function RiskUsersWidget({ onShowUserDetail, riskUsers }: { onShowUserDetail?: (name: string) => void, riskUsers: RiskUser[] }) {
-  const sorted = [...riskUsers].sort((a, b) => b.alertCount - a.alertCount)
-  return (<div className="widget-stack">{sorted.map(user => (<article key={user.name} className="risk-row"><div className="risk-row__copy"><div><strong>{user.name}</strong><span>{user.team}</span></div><span className="risk-row__sessions">{user.sessionsToday}세션</span></div><div className="risk-row__bar"><div style={{ width: `${Math.min(user.alertCount * 10, 100)}%`, background: user.alertCount >= 5 ? '#ef4444' : user.alertCount >= 2 ? '#f59e0b' : '#10b981' }} /></div><div className="risk-row__footer"><span>알림 {user.alertCount}회</span><button type="button" onClick={() => onShowUserDetail?.(user.name)}>상세 보기</button></div></article>))}</div>)
-}
-
-function AlertFeedWidget({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
-  const [filter, setFilter] = useState<'all' | 'L1' | 'L2'>('all'); const filtered = alertItems.filter(i => filter === 'all' ? true : i.level === filter)
-  return (<div className="widget-stack" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', padding: '0 16px' }}>{(['all', 'L1', 'L2'] as const).map(l => <button key={l} type="button" className={`ghost-button${filter === l ? ' is-active' : ''}`} style={{ flex: 1, padding: '6px' }} onClick={() => setFilter(l)}>{l === 'all' ? '전체' : (l === 'L1' ? '졸음' : '수면')}</button>)}</div>
-    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 16px 16px 16px' }}>
-      {filtered.length > 0 ? filtered.map((item, index) => (
-        <article key={index} className="feed-row" style={{ margin: 0 }}><div className="feed-row__head"><div><strong>{item.user}</strong><span>{item.team}</span></div><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span></div><p className="feed-row__note">{item.note}</p><div className="feed-row__meta"><span>{item.time}</span><button type="button" onClick={() => setActiveTab?.('alerts')}>알림 열기</button></div></article>
-      )) : <div style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>해당 등급의 알림이 없습니다.</div>}
-    </div></div>)
-}
-
-function HourlyTrendWidget() {
-  const total = alertItems.length; const l1 = alertItems.filter(a => a.level === 'L1').length; const l2 = alertItems.filter(a => a.level === 'L2').length
-  return (<div className="widget-stack"><div className="chart-header"><div><span>금일 피크 시간</span><strong>22:00</strong></div><div><span>총 누적 알림</span><strong>{total}건</strong></div></div>
-    <div className="bar-chart" aria-label="시간대별 졸음 알림 차트">{hourlyTrendData.map(p => (<div key={p.label} className="bar-chart__item"><div className="bar-chart__column"><div style={{ height: `${p.value * 3}px` }} /></div><strong>{p.value}</strong><span>{p.label}</span></div>))}</div>
-    <div className="compare-strip"><div><span>졸음 발생</span><strong>{Math.round(l1/total*100)}%</strong></div><div><span>수면 발생</span><strong>{Math.round(l2/total*100)}%</strong></div><div><span>기타 알림</span><strong>0%</strong></div></div></div>)
-}
-
-function SessionTableWidget() {
-  const [query, setQuery] = useState('')
-  const filtered = sessionRows
-    .filter(row => row.user.toLowerCase().includes(query.toLowerCase()) || row.alerts.toLowerCase().includes(query.toLowerCase()))
-    .sort((a, b) => new Date(`${b.date}T${b.startTime}`).getTime() - new Date(`${a.date}T${a.startTime}`).getTime())
-  return (<div className="widget-stack">
-    <div className="search-strip">
-      <div className="search-strip__input"><Search size={16} /><input type="text" placeholder="사용자 또는 알림 검색" value={query} onChange={e => setQuery(e.target.value)} style={{ background: 'transparent', border: 'none', outline: 'none', color: 'inherit', width: '100%' }} /></div>
-    </div>
-    <div className="table-shell"><table><thead><tr><th>사용자</th><th>러닝 타임</th><th>알림 요약</th></tr></thead><tbody>{filtered.length > 0 ? filtered.map((row, idx) => (<tr key={idx}><td>{row.user}</td><td>{row.duration}</td><td>{row.alerts}</td></tr>)) : <tr><td colSpan={3} style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>검색 결과가 없습니다.</td></tr>}</tbody></table></div></div>)
-}
-
-function StatEventModal({ groupKey, items, onClose }: { groupKey: string, items: AlertItem[], onClose: () => void }) {
-  return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><h2 style={{ margin: '0', fontSize: '1.25rem' }}>{groupKey} <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>발생 알림 목록</span></h2></div><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button></header><div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}><div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>발생 시간</th><th>사용자</th><th>소속</th><th>알림 단계</th><th>상세 내용</th></tr></thead><tbody>{items.map((item, i) => (<tr key={i}><td>{item.time}</td><td><strong>{item.user}</strong></td><td>{item.team}</td><td><span className={`feed-row__level feed-row__level--${item.level}`}>{item.level === 'L1' ? '졸음' : item.level === 'L2' ? '수면' : item.level}</span></td><td>{item.note}</td></tr>))}</tbody></table></div></div></div></div>)
-}
-
-function UserDetailModal({ userName, riskUsers, onClose, onDelete, onUpdate }: { userName: string, riskUsers: RiskUser[], onClose: () => void, onDelete: () => void, onUpdate: (team: string) => void }) {
-  const [filterDays, setFilterDays] = useState<number | null>(7); const [editMode, setEditMode] = useState(false); const user = riskUsers.find(u => u.name === userName) || { name: userName, team: '미상', alertCount: 0, sessionsToday: 0 }
-  const [newTeam, setNewTeam] = useState(user.team)
-  const filterByDate = (date: string) => { if (!filterDays) return true; return (new Date('2026-04-11').getTime() - new Date(date).getTime()) / 86400000 <= filterDays }
-  const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date)); const sessions = sessionRows.filter(s => s.user === userName && filterByDate(s.date))
-  return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '800px', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <div>
-      {editMode ? (<div style={{ display: 'flex', gap: '8px' }}><strong style={{ alignSelf: 'center' }}>{user.name}</strong><input value={newTeam} onChange={e => setNewTeam(e.target.value)} placeholder="신규 소속" style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #e5e7eb' }} /></div>) 
-      : (<h2 style={{ margin: '0', fontSize: '1.25rem' }}>{user.name} <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>{user.team}</span></h2>)}
-    </div>
-    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-      {editMode ? (<><button type="button" className="ghost-button" onClick={() => { onUpdate(newTeam); setEditMode(false); }} style={{ padding: '8px', color: '#0f3d3e', fontWeight: 600 }}>저장</button><button type="button" className="ghost-button" onClick={() => setEditMode(false)} style={{ padding: '8px' }}>취소</button></>)
-      : (<button type="button" className="ghost-button" onClick={() => setEditMode(true)} style={{ padding: '8px' }}>소속 수정</button>)}
-      <button type="button" className="ghost-button" onClick={() => { if (window.confirm(`${userName} 구성원을 삭제하시겠습니까?`)) onDelete(); }} style={{ padding: '8px', color: '#d95d39', border: '1px solid #d95d39' }}>삭제</button>
-      <select value={filterDays || 'all'} onChange={e => setFilterDays(e.target.value === 'all' ? null : Number(e.target.value))} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="all">전체 기간</option></select><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button>
-    </div></header><div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
-    <section><h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldAlert size={18} />졸음 알림 로그 ({alerts.length}건)</h3>{alerts.length > 0 ? <div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>날짜</th><th>발생 시간</th><th>알림 단계</th><th>상세 내용</th></tr></thead><tbody>{alerts.map((a, i) => (<tr key={i}><td>{a.date}</td><td>{a.time}</td><td><span className={`feed-row__level feed-row__level--${a.level}`}>{a.level === 'L1' ? '졸음' : a.level === 'L2' ? '수면' : a.level}</span></td><td>{a.note}</td></tr>))}</tbody></table></div> : <div style={{ padding: '24px', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', color: '#6b7280' }}>발생한 알림이 없습니다.</div>}</section>
-    <section><h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Clock3 size={18} />세션 로그 ({sessions.length}건)</h3>{sessions.length > 0 ? <div className="table-shell"><table style={{ margin: 0 }}><thead><tr><th>날짜</th><th>시작 시간</th><th>러닝 타임</th><th>알림 요약</th></tr></thead><tbody>{sessions.map((s, i) => (<tr key={i}><td>{s.date}</td><td>{s.startTime}</td><td>{s.duration}</td><td>{s.alerts || '-'}</td></tr>))}</tbody></table></div> : <div style={{ padding: '24px', textAlign: 'center', background: '#f9fafb', borderRadius: '8px', color: '#6b7280' }}>기록된 세션이 없습니다.</div>}</section>
-  </div></div></div>)
-}
-
-function AddMemberModal({ onClose, onAdd }: { onClose: () => void, onAdd: (email: string, team: string) => void }) {
-  const [team, setTeam] = useState(''); const [email, setEmail] = useState('')
-  return (<div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}><div className="modal-content" style={{ background: 'white', width: '100%', maxWidth: '400px', borderRadius: '12px', overflow: 'hidden' }}><header style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h2>구성원 직접 추가</h2><button type="button" className="ghost-button" onClick={onClose} style={{ padding: '8px' }}>닫기</button></header><div style={{ padding: '24px' }}><p style={{ margin: '0 0 20px 0', fontSize: '0.9rem', color: '#6b7280' }}>이메일로 구성원을 등록합니다. 이름은 사용자가 앱 가입 시 설정한 정보로 자동 연동됩니다.</p><form onSubmit={e => { e.preventDefault(); onAdd(email, team); alert(`${email} 구성원이 추가되었습니다.`); onClose(); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-    <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>이메일</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@example.com" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb' }} required /></div>
-    <div><label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600 }}>소속 부서</label><input type="text" value={team} onChange={e => setTeam(e.target.value)} placeholder="운수팀 A" style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e5e7eb' }} required /></div>
-    <button type="submit" className="ghost-button" style={{ background: '#0f3d3e', color: 'white', fontWeight: 600, height: '3rem' }}>추가 저장</button></form></div></div></div>)
-}
-
-export default App
