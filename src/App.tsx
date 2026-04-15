@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import {
   Activity,
   BellRing,
+  Check,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Lock,
   LogOut,
@@ -38,7 +41,9 @@ import {
   initialRiskUsers,
   alertItems,
   sessionRows,
-  hourlyTrendData
+  hourlyTrendData,
+  todayStr,
+  weekAgoStr
 } from './data/mockData'
 import type { RiskUser, AlertItem, SessionRow, WidgetId } from './types'
 
@@ -70,7 +75,7 @@ function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose
 
   const filterByDate = (date: string) => { 
     if (!filterDays) return true; 
-    return (new Date('2026-04-11').getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
+    return (new Date(todayStr).getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
   }
   
   const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date))
@@ -186,15 +191,6 @@ function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose
   )
 }
 
-function getWeekStr(dateStr: string) {
-  const d = new Date(dateStr)
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7)
-  const week1 = new Date(d.getFullYear(), 0, 4)
-  const week = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)
-  return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`
-}
-
 function getWeekOfMonthStr(dateStr: string) {
   const d = new Date(dateStr)
   const month = d.getMonth() + 1
@@ -209,7 +205,15 @@ export default function App() {
   const [operatorCode, setOperatorCode] = useState('')
   const [password, setPassword] = useState('')
 
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [isEditMode, setIsEditMode] = useState(false)
 
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(defaultLayouts)
   const [visibleWidgets, setVisibleWidgets] = useState<Record<WidgetId, boolean>>({
@@ -267,10 +271,11 @@ export default function App() {
 
   const [riskUsersState, setRiskUsersState] = useState<RiskUser[]>(initialRiskUsers)
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
+  const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({})
 
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
-  const [statStartDate, setStatStartDate] = useState('2026-04-04')
-  const [statEndDate, setStatEndDate] = useState('2026-04-11')
+  const [statStartDate, setStatStartDate] = useState(weekAgoStr)
+  const [statEndDate, setStatEndDate] = useState(todayStr)
 
   const [membersQuery, setMembersQuery] = useState('')
   const [membersTeamFilter, setMembersTeamFilter] = useState('all')
@@ -278,8 +283,8 @@ export default function App() {
   const [team, setTeam] = useState('운수팀 A')
   const [showAddMember, setShowAddMember] = useState(false)
 
-  const [alertFilterStartDate, setAlertFilterStartDate] = useState('2026-04-04')
-  const [alertFilterEndDate, setAlertFilterEndDate] = useState('2026-04-11')
+  const [alertFilterStartDate, setAlertFilterStartDate] = useState(weekAgoStr)
+  const [alertFilterEndDate, setAlertFilterEndDate] = useState(todayStr)
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const handleExport = () => {
@@ -375,12 +380,14 @@ export default function App() {
             <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
               <div>
                 <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">대시보드</h1>
-                <p className="text-sm font-medium text-slate-500 m-0">실시간 모니터링 및 시스템 현황 요약</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
-                  <Clock3 size={16} /> {new Date('2026-04-11T13:00:00').toLocaleString('ko-KR')} 기준
+                  <Clock3 size={16} /> {currentTime.toLocaleString('ko-KR')} 기준
                 </div>
+                <button onClick={() => setIsEditMode(!isEditMode)} className={`flex items-center gap-2 h-10 px-4 rounded-xl border text-sm font-bold shadow-sm transition-colors ${isEditMode ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  {isEditMode ? <><Check size={16} /> 편집 완료</> : <><SquarePen size={16} /> 위젯 편집</>}
+                </button>
                 <button onClick={resetDashboard} className="flex items-center gap-2 h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors">
                   <RotateCcw size={16} /> 위젯 초기화
                 </button>
@@ -407,34 +414,49 @@ export default function App() {
             </div>
 
             <ResponsiveGridLayout
-              className="min-h-[400px]"
+              className={`min-h-[400px] ${isEditMode ? 'is-editing' : ''}`}
               layouts={layouts}
               breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
               cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
               rowHeight={30}
               onLayoutChange={handleLayoutChange}
               draggableHandle=".drag-handle"
-              isDraggable={true}
-              isResizable={true}
-              compactType={null}
+              isDraggable={isEditMode}
+              isResizable={isEditMode}
+              compactType="vertical"
               preventCollision={false}
               margin={[16, 16]}
             >
               {widgetOrder.filter(id => visibleWidgets[id]).map(id => (
                 <div key={id} data-grid={defaultLayouts.lg?.find(l => l.i === id)} className="flex flex-col bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden group">
-                  <div className="drag-handle flex items-center justify-between p-3 border-b border-slate-50 bg-slate-50/50 cursor-move">
-                    <h3 className="text-sm font-bold text-slate-700 m-0 flex items-center gap-2"><Move size={14} className="text-slate-400" /> {widgetMeta[id].title}</h3>
-                    <button onClick={() => toggleWidget(id)} className="text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity p-1">✕</button>
+                  <div className={`${isEditMode ? 'drag-handle cursor-move' : ''} flex items-center justify-between p-3 border-b border-slate-50 bg-slate-50/50`}>
+                    <h3 className="text-sm font-bold text-slate-700 m-0 flex items-center gap-2">
+                      {isEditMode && <Move size={14} className="text-slate-400" />} {widgetMeta[id].title}
+                    </h3>
+                    {isEditMode && <button onClick={() => toggleWidget(id)} className="text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity p-1">✕</button>}
                   </div>
                   <div className="flex-1 overflow-auto p-4 custom-scrollbar">
-                    {id === 'activeUsers' && (
-                      <div className="flex flex-col gap-4 h-full">
-                        <div className="flex-1 p-6 rounded-2xl bg-gradient-to-br from-blue-900 to-blue-700 text-white shadow-lg shadow-blue-900/20 flex flex-col justify-center items-center text-center">
-                          <p className="text-base font-bold text-blue-200 m-0 mb-2">실시간 모니터링 인원</p>
-                          <strong className="text-6xl font-black">{riskUsersState.length}명</strong>
+                    {id === 'activeUsers' && (() => {
+                      const total = riskUsersState.length;
+                      const active = riskUsersState.filter(u => u.isOnline).length;
+                      const alerting = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                      return (
+                        <div className="flex flex-col h-full justify-between gap-4">
+                          <div className="flex-1 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-center">
+                            <p className="text-xs font-bold text-slate-500 m-0 mb-1">총 구성원</p>
+                            <strong className="text-4xl font-black text-slate-900">{total}</strong>
+                          </div>
+                          <div className="flex-1 p-4 rounded-xl bg-blue-50 border border-blue-100 flex flex-col items-center justify-center text-center">
+                            <p className="text-xs font-bold text-blue-500 m-0 mb-1">현재 활성화</p>
+                            <strong className="text-4xl font-black text-blue-700">{active}</strong>
+                          </div>
+                          <div className="flex-1 p-4 rounded-xl bg-red-50 border border-red-100 flex flex-col items-center justify-center text-center">
+                            <p className="text-xs font-bold text-red-500 m-0 mb-1">실시간 경고</p>
+                            <strong className="text-4xl font-black text-red-700">{alerting}</strong>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                     {id === 'riskUsers' && (
                       <div className="flex flex-col gap-2">
                         {riskUsersState.slice(0, 5).map(u => (
@@ -521,7 +543,6 @@ export default function App() {
             <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
               <div>
                 <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">실시간 모니터링</h1>
-                <p className="text-sm font-medium text-slate-500 m-0">현재 접속 중인 사용자의 상태를 실시간으로 확인합니다.</p>
               </div>
               <div className="flex gap-2">
                 <div className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl text-sm font-bold flex items-center gap-2">
@@ -530,31 +551,95 @@ export default function App() {
               </div>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <SummaryCard icon={Activity} label="현재 모니터링 인원" value="25" detail="운전 18 / 학습 7" />
-              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
-              <SummaryCard icon={ShieldAlert} label="위험 사용자" value={riskUsersState.filter(u => u.alertCount >= 5).length.toString()} detail="즉시 조치 필요" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <SummaryCard icon={Activity} label="현재 모니터링 인원" value={riskUsersState.filter(u => u.isOnline).length.toString()} detail={`활성화 ${riskUsersState.filter(u => u.isOnline).length}명 / 비활성화 ${riskUsersState.filter(u => !u.isOnline).length}명`} />
+              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === todayStr).length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === todayStr && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === todayStr && a.level === 'L2').length}건`} />
             </div>
 
-            <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-              <h2 className="text-lg font-black text-slate-900 mb-6">모니터링 목록 (25)</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {riskUsersState.map(user => (
-                  <button key={user.name} onClick={() => setSelectedUserForDetail(user.name)} className="flex flex-col p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:shadow-md transition-all text-left bg-white group">
-                    <div className="flex justify-between items-start mb-3 w-full">
-                      <div className={`px-2 py-1 rounded-md text-[10px] font-bold ${user.alertCount >= 5 ? 'bg-red-100 text-red-700' : user.alertCount >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {user.alertCount >= 5 ? '위험' : user.alertCount >= 2 ? '주의' : '정상'}
+            {(() => {
+              const activeAlerts = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline);
+              const activeUsers = riskUsersState.filter(u => u.isOnline);
+              return (
+                <div className="flex flex-col xl:flex-row gap-6">
+                  <div className="flex-1 flex flex-col gap-6 min-w-0">
+                    <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                      <h2 className="text-lg font-black text-slate-900 mb-6">이번 세션 모니터링 목록 ({activeUsers.length})</h2>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {activeUsers.map(user => {
+                          const currentSession = sessionRows.find(s => s.user === user.name && s.date === todayStr) || { duration: '0h 0m', alerts: '정상' };
+                          const isActiveAlert = activeAlerts.some(a => a.user === user.name);
+                          const isExpanded = expandedUsers[user.name];
+                          const userAlerts = alertItems.filter(a => a.user === user.name && a.date === todayStr);
+                          
+                          return (
+                            <div key={user.name} className={`flex flex-col p-4 border rounded-xl shadow-sm transition-all bg-white ${isActiveAlert ? 'border-red-400 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
+                              <div className="flex justify-between items-start mb-3 w-full">
+                                <div className={`px-2 py-1 rounded-md text-[10px] font-bold ${isActiveAlert ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                  {isActiveAlert ? '위험' : '정상'}
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400">{currentSession.duration}</span>
+                              </div>
+                              <strong className="text-lg font-black text-slate-900 mb-1">{user.name}</strong>
+                              <span className="text-xs text-slate-500 mb-3">{user.team}</span>
+                              
+                              <div className="mt-auto flex justify-end">
+                                <button onClick={() => setExpandedUsers(prev => ({ ...prev, [user.name]: !prev[user.name] }))} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+                                  {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                </button>
+                              </div>
+                              
+                              {isExpanded && (
+                                <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                                  {userAlerts.length > 0 ? userAlerts.map((a, i) => (
+                                    <div key={i} className="flex justify-between items-center text-xs">
+                                      <span className="text-slate-500 font-medium">{a.time}</span>
+                                      <span className={`font-bold ${a.level === 'L2' ? 'text-red-600' : 'text-amber-500'}`}>{a.note}</span>
+                                    </div>
+                                  )) : (
+                                    <p className="text-xs text-slate-400 text-center m-0">발생한 경고 알림이 없습니다.</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <strong className="text-lg font-black text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{user.name}</strong>
-                    <span className="text-xs text-slate-500 mb-3">{user.team}</span>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-auto">
-                      <div className={`h-full ${user.alertCount >= 5 ? 'bg-red-500' : user.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(10, 100 - user.alertCount * 15)}%` }}></div>
+                  </div>
+                  
+                  <div className="w-full xl:w-[360px] shrink-0">
+                    <div className={`p-6 rounded-2xl shadow-sm border ${activeAlerts.length > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'} sticky top-6`}>
+                      <h2 className={`text-lg font-black mb-6 flex items-center gap-2 ${activeAlerts.length > 0 ? 'text-red-700' : 'text-slate-500'}`}>
+                        <BellRing size={20} className={activeAlerts.length > 0 ? 'animate-pulse' : ''} /> 
+                        진행 중인 경고 ({activeAlerts.length})
+                      </h2>
+                      <div className="flex flex-col gap-4">
+                        {activeAlerts.length > 0 ? activeAlerts.map((alert, idx) => (
+                          <div key={idx} className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex flex-col gap-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <strong className="text-red-700 font-bold block mb-1">{alert.user}</strong>
+                                <span className="text-xs text-slate-500">{alert.team}</span>
+                              </div>
+                              <span className={`px-2 py-1 rounded-md text-[10px] font-bold ${alert.level === 'L2' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>{alert.level === 'L2' ? '수면' : '졸음'}</span>
+                            </div>
+                            <p className="text-sm font-bold text-slate-700 m-0">{alert.note}</p>
+                            <div className="text-xs text-slate-400 mt-1">{alert.time} 발생</div>
+                          </div>
+                        )) : (
+                          <div className="text-center py-12 flex flex-col items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-300">
+                              <Check size={24} />
+                            </div>
+                            <p className="text-sm font-bold text-slate-400 m-0">현재 울리고 있는<br/>경고 알림이 없습니다.</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -563,7 +648,6 @@ export default function App() {
             <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
               <div>
                 <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">구성원 관리</h1>
-                <p className="text-sm font-medium text-slate-500 m-0">조직 및 구성원 등록, 권한을 관리합니다.</p>
               </div>
               <button onClick={() => setShowAddMember(true)} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-colors">
                 + 구성원 추가
@@ -614,7 +698,6 @@ export default function App() {
             <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
               <div>
                 <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">알림 기록</h1>
-                <p className="text-sm font-medium text-slate-500 m-0">과거부터 현재까지의 모든 알림 내역을 조회합니다.</p>
               </div>
               <button onClick={handleExport} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-colors text-sm">
                 CSV 내보내기
@@ -633,8 +716,8 @@ export default function App() {
                   <label className="text-sm font-bold text-slate-600">단계:</label>
                   <select value={alertFilterLevel} onChange={e => setAlertFilterLevel(e.target.value as any)} className="px-3 py-1.5 border border-slate-200 rounded-lg outline-none text-sm font-medium bg-white">
                     <option value="all">전체</option>
-                    <option value="L1">1단계 (졸음)</option>
-                    <option value="L2">2단계 (수면)</option>
+                    <option value="L1">졸음</option>
+                    <option value="L2">수면</option>
                   </select>
                 </div>
               </div>
@@ -674,11 +757,8 @@ export default function App() {
 
         {activeTab === 'statistics' && (() => {
           const filtered = alertItems.filter(item => {
-            if (statType === 'hourly' || statType === 'daily') { const t = new Date(item.date).getTime(); return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime()) }
-            else if (statType === 'weekly') { const w = getWeekStr(item.date); return w >= statStartDate && w <= statEndDate }
-            else if (statType === 'monthly') { const m = item.date.substring(0, 7); return m >= statStartDate.substring(0, 7) && m <= statEndDate.substring(0, 7) }
-            else if (statType === 'yearly') { const y = item.date.substring(0, 4); return y >= statStartDate.substring(0, 4) && y <= statEndDate.substring(0, 4) }
-            return true
+            const t = new Date(item.date).getTime();
+            return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime());
           })
           const grouped = filtered.reduce((acc, item) => {
             let key = ''
@@ -710,7 +790,6 @@ export default function App() {
               <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
                 <div>
                   <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">분석</h1>
-                  <p className="text-sm font-medium text-slate-500 m-0">졸음 감지 데이터 분석 및 인사이트</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
                   {['hourly', 'daily', 'weekly', 'monthly', 'yearly'].map(type => (
@@ -722,7 +801,7 @@ export default function App() {
                         setStatType(type as any); 
                         if(type==='yearly') {setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31')}
                         else if(type==='monthly') {setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31')}
-                        else {setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11')}
+                        else {setStatStartDate(weekAgoStr); setStatEndDate(todayStr)}
                       }}>
                       {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
                     </button>
@@ -740,11 +819,11 @@ export default function App() {
                   <p className="text-3xl font-black text-slate-900 m-0">{totalSessions}</p>
                 </div>
                 <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">1단계 졸음</p>
+                  <p className="text-sm font-bold text-slate-500 mb-2">졸음</p>
                   <p className="text-3xl font-black text-amber-500 m-0">{totalL1}</p>
                 </div>
                 <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">2단계 졸음 (수면)</p>
+                  <p className="text-sm font-bold text-slate-500 mb-2">수면</p>
                   <p className="text-3xl font-black text-red-500 m-0">{totalL2}</p>
                 </div>
                 <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
@@ -759,8 +838,8 @@ export default function App() {
                     <div className="flex items-center justify-between mb-6">
                       <h2 className="text-lg font-black text-slate-900 m-0">추이 분석 (Recharts)</h2>
                       <div className="flex gap-4">
-                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">1단계 졸음</span></div>
-                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">2단계 졸음</span></div>
+                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">졸음</span></div>
+                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">수면</span></div>
                       </div>
                     </div>
                     <div className="w-full h-[300px] min-h-[300px] min-w-0">
@@ -770,8 +849,8 @@ export default function App() {
                           <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
                           <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
                           <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                          <Line type="monotone" dataKey="l1" name="1단계 졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                          <Line type="monotone" dataKey="l2" name="2단계 졸음 (수면)" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                          <Line type="monotone" dataKey="l1" name="졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                          <Line type="monotone" dataKey="l2" name="수면" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -783,7 +862,7 @@ export default function App() {
                       <div className="overflow-x-auto rounded-xl border border-slate-100">
                         <table className="w-full text-sm text-left">
                           <thead className="bg-slate-50 text-slate-500">
-                            <tr><th className="p-3 font-bold border-b border-slate-100">기준</th><th className="p-3 font-bold border-b border-slate-100">총 알림</th><th className="p-3 font-bold border-b border-slate-100">1단계</th><th className="p-3 font-bold border-b border-slate-100">2단계</th></tr>
+                            <tr><th className="p-3 font-bold border-b border-slate-100">기준</th><th className="p-3 font-bold border-b border-slate-100">총 알림</th><th className="p-3 font-bold border-b border-slate-100">졸음</th><th className="p-3 font-bold border-b border-slate-100">수면</th></tr>
                           </thead>
                           <tbody>
                             {statResult.slice(0, 5).map((row: any) => (
@@ -833,7 +912,6 @@ export default function App() {
           <div className="flex flex-col gap-6">
             <header className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
               <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">계정 설정</h1>
-              <p className="text-sm font-medium text-slate-500 m-0">계정 보안 및 접근 제어를 관리합니다.</p>
             </header>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -28,6 +28,7 @@ export type RiskUser = {
   team: string
   alertCount: number
   sessionsToday: number
+  isOnline: boolean
 }
 
 export type SessionRow = {

@@ -52,3 +52,19 @@
     @apply bg-slate-50 text-slate-900;
   }
 }
+
+/* React Grid Layout Overrides */
+.react-draggable-dragging {
+  user-select: none;
+}
+.react-grid-item > .drag-handle {
+  user-select: none;
+}
+.is-editing .react-grid-item {
+  transition: box-shadow 0.2s ease;
+  user-select: none;
+}
+.is-editing .react-grid-item:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
