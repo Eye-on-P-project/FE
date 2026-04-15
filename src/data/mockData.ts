@@ -92,6 +92,14 @@ export const initialRiskUsers: RiskUser[] = [
   { name: '김종국', team: '업무팀 2', alertCount: 0, sessionsToday: 10 },
 ]
 
+export const getPastDateStr = (daysAgo: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+export const todayStr = getPastDateStr(0);
+export const weekAgoStr = getPastDateStr(7);
+
 export const { alertItems, sessionRows } = (() => {
   const alerts: AlertItem[] = []
   const sessions: SessionRow[] = []
@@ -100,7 +108,7 @@ export const { alertItems, sessionRows } = (() => {
   initialRiskUsers.forEach(user => {
     const userSessions = Array.from({ length: 12 }).map((_, idx) => ({
       user: user.name,
-      date: `2026-04-${String(11 - Math.floor(idx/3)).padStart(2, '0')}`,
+      date: getPastDateStr(Math.floor(idx/3)),
       startTime: `${String(8 + (idx % 8) * 2).padStart(2, '0')}:15`,
       duration: `${1 + (idx % 3)}h ${10 + (idx * 5) % 45}m`,
       alerts: '정상',

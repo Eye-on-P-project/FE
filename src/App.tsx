@@ -38,7 +38,9 @@ import {
   initialRiskUsers,
   alertItems,
   sessionRows,
-  hourlyTrendData
+  hourlyTrendData,
+  todayStr,
+  weekAgoStr
 } from './data/mockData'
 import type { RiskUser, AlertItem, SessionRow, WidgetId } from './types'
 
@@ -70,7 +72,7 @@ function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose
 
   const filterByDate = (date: string) => { 
     if (!filterDays) return true; 
-    return (new Date('2026-04-11').getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
+    return (new Date(todayStr).getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
   }
   
   const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date))
@@ -209,6 +211,13 @@ export default function App() {
   const [operatorCode, setOperatorCode] = useState('')
   const [password, setPassword] = useState('')
 
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   const [activeTab, setActiveTab] = useState('dashboard')
 
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(defaultLayouts)
@@ -269,8 +278,8 @@ export default function App() {
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
 
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
-  const [statStartDate, setStatStartDate] = useState('2026-04-04')
-  const [statEndDate, setStatEndDate] = useState('2026-04-11')
+  const [statStartDate, setStatStartDate] = useState(weekAgoStr)
+  const [statEndDate, setStatEndDate] = useState(todayStr)
 
   const [membersQuery, setMembersQuery] = useState('')
   const [membersTeamFilter, setMembersTeamFilter] = useState('all')
@@ -278,8 +287,8 @@ export default function App() {
   const [team, setTeam] = useState('운수팀 A')
   const [showAddMember, setShowAddMember] = useState(false)
 
-  const [alertFilterStartDate, setAlertFilterStartDate] = useState('2026-04-04')
-  const [alertFilterEndDate, setAlertFilterEndDate] = useState('2026-04-11')
+  const [alertFilterStartDate, setAlertFilterStartDate] = useState(weekAgoStr)
+  const [alertFilterEndDate, setAlertFilterEndDate] = useState(todayStr)
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const handleExport = () => {
@@ -379,7 +388,7 @@ export default function App() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
-                  <Clock3 size={16} /> {new Date('2026-04-11T13:00:00').toLocaleString('ko-KR')} 기준
+                  <Clock3 size={16} /> {currentTime.toLocaleString('ko-KR')} 기준
                 </div>
                 <button onClick={resetDashboard} className="flex items-center gap-2 h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors">
                   <RotateCcw size={16} /> 위젯 초기화
@@ -532,7 +541,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <SummaryCard icon={Activity} label="현재 모니터링 인원" value="25" detail="운전 18 / 학습 7" />
-              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === '2026-04-11').length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === '2026-04-11' && a.level === 'L2').length}건`} />
+              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === todayStr).length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === todayStr && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === todayStr && a.level === 'L2').length}건`} />
               <SummaryCard icon={ShieldAlert} label="위험 사용자" value={riskUsersState.filter(u => u.alertCount >= 5).length.toString()} detail="즉시 조치 필요" />
             </div>
 
@@ -722,7 +731,7 @@ export default function App() {
                         setStatType(type as any); 
                         if(type==='yearly') {setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31')}
                         else if(type==='monthly') {setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31')}
-                        else {setStatStartDate('2026-04-04'); setStatEndDate('2026-04-11')}
+                        else {setStatStartDate(weekAgoStr); setStatEndDate(todayStr)}
                       }}>
                       {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
                     </button>
