@@ -256,13 +256,11 @@ export default function App() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    if (operatorCode === 'ABC-123' && password === 'admin') setIsLoggedIn(true)
-    else alert('운영자 코드 또는 비밀번호가 올바르지 않습니다. (ABC-123 / admin)')
+    setIsLoggedIn(true)
   }
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
-    if (operatorCode !== 'ABC-123') { alert('유효하지 않은 운영자 코드입니다.'); return; }
     alert('회원가입이 완료되었습니다. 로그인해 주세요.')
     setIsLoginMode(true)
     setPassword('')
@@ -311,18 +309,18 @@ export default function App() {
           
           <div className="flex w-full bg-slate-100 rounded-xl p-1 mb-8 mt-6">
             <button type="button" onClick={() => setIsLoginMode(true)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>로그인</button>
-            <button type="button" onClick={() => setIsLoginMode(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>운영자 등록</button>
+            <button type="button" onClick={() => setIsLoginMode(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>회원가입</button>
           </div>
           
           {isLoginMode ? (
             <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
-              <input type="text" placeholder="운영자 코드" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="email" placeholder="이메일" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
               <input type="password" placeholder="비밀번호" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
               <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">로그인</button>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="w-full flex flex-col gap-4">
-              <input type="text" placeholder="관리자 부여 조직 코드" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="text" placeholder="조직 코드" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
               <input type="email" placeholder="이메일" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
               <input type="password" placeholder="사용할 비밀번호" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
               <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform">등록 요청</button>
