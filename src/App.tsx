@@ -286,17 +286,18 @@ export default function App() {
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const handleExport = () => {
-    const csvContent = "data:text/csv;charset=utf-8,Date,Time,User,Team,Level,Note\n" 
+    const csvContent = "\uFEFFDate,Time,User,Team,Level,Note\n"
       + alertItems.map(a => `${a.date},${a.time},${a.user},${a.team},${a.level},${a.note}`).join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", "alerts_export.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
-
   if (!isLoggedIn) {
     return (
       <div className="flex min-h-screen bg-slate-50 items-center justify-center p-4">
@@ -392,23 +393,69 @@ export default function App() {
               </div>
             </header>
 
-            <div className="mb-6 p-5 bg-white border border-slate-100 rounded-2xl shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold text-slate-900 m-0">대시보드 위젯 설정</h2>
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">{Object.values(visibleWidgets).filter(v => v).length}개 활성화됨</span>
+            <div className="flex flex-col lg:flex-row gap-4 mb-6">
+              <div className="flex-1 p-5 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-bold text-slate-900 m-0">대시보드 위젯 설정</h2>
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">{Object.values(visibleWidgets).filter(v => v).length}개 활성화됨</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {widgetOrder.map(id => (
+                    <button
+                      key={id}
+                      onClick={() => toggleWidget(id)}
+                      className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold transition-all ${visibleWidgets[id] ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                    >
+                      <div className={`w-2 h-2 rounded-full ${visibleWidgets[id] ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
+                      {widgetMeta[id].title}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {widgetOrder.map(id => (
-                  <button
-                    key={id}
-                    onClick={() => toggleWidget(id)}
-                    className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold transition-all ${visibleWidgets[id] ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                  >
-                    <div className={`w-2 h-2 rounded-full ${visibleWidgets[id] ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
-                    {widgetMeta[id].title}
-                  </button>
-                ))}
-              </div>
+
+              {(() => {
+                const activeAlerts = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline);
+                const l1Count = activeAlerts.filter(a => a.level === 'L1').length;
+                const l2Count = activeAlerts.filter(a => a.level === 'L2').length;
+                const hasAlerts = activeAlerts.length > 0;
+                
+                return (
+                  <div className={`w-full lg:w-[320px] xl:w-[400px] p-5 rounded-2xl shadow-sm flex flex-col justify-center relative overflow-hidden transition-all ${hasAlerts ? 'bg-red-600 border border-red-700 text-white shadow-red-500/30' : 'bg-slate-50 border border-slate-200 text-slate-400'}`}>
+                    {hasAlerts && (
+                      <div className="absolute -right-4 -top-4 opacity-10">
+                        <ShieldAlert size={120} />
+                      </div>
+                    )}
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2 mb-3">
+                        {hasAlerts ? (
+                          <span className="flex w-3 h-3 relative">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                          </span>
+                        ) : (
+                          <span className="w-3 h-3 rounded-full bg-slate-300"></span>
+                        )}
+                        <h2 className={`text-sm font-black m-0 tracking-wider ${hasAlerts ? 'text-white' : 'text-slate-500'}`}>실시간 세션 경고</h2>
+                      </div>
+                      <div className="flex items-end gap-3">
+                        <div className={`text-5xl font-black ${hasAlerts ? 'text-white' : 'text-slate-300'}`}>{activeAlerts.length}</div>
+                        <div className={`text-sm font-bold pb-1 ${hasAlerts ? 'opacity-90' : 'opacity-50'}`}>진행중</div>
+                      </div>
+                      {hasAlerts && (
+                        <div className="flex gap-4 mt-4 pt-4 border-t border-red-500/50">
+                          <div className="flex items-center gap-2 text-sm font-bold">
+                            <span className="w-2 h-2 rounded-full bg-amber-300"></span> 졸음 {l1Count}건
+                          </div>
+                          <div className="flex items-center gap-2 text-sm font-bold">
+                            <span className="w-2 h-2 rounded-full bg-rose-300"></span> 수면 {l2Count}건
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             <ResponsiveGridLayout
