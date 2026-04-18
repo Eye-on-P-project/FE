@@ -33,6 +33,10 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './index.css'
 
+import { Toaster, toast } from 'react-hot-toast'
+import apiClient from './api/client'
+import type { LoginResponse } from './types/api'
+
 import {
   navigationItems,
   widgetOrder,
@@ -205,6 +209,12 @@ export default function App() {
   const [operatorCode, setOperatorCode] = useState('')
   const [password, setPassword] = useState('')
 
+  const [signupEmail, setSignupEmail] = useState('')
+  const [signupPassword, setSignupPassword] = useState('')
+  const [signupOrgCode, setSignupOrgCode] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
+
   const [currentTime, setCurrentTime] = useState(new Date())
 
   useEffect(() => {
@@ -254,17 +264,57 @@ export default function App() {
     localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(allVisible))
   }
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoggedIn(true)
+    setIsLoading(true)
+    try {
+      const response = await apiClient.post<LoginResponse>('/api/auth/login', {
+        email: operatorCode,
+        password: password
+      })
+      localStorage.setItem('accessToken', response.data.accessToken)
+      toast.success('로그인에 성공했습니다!')
+      setIsLoggedIn(true)
+    } catch (error: any) {
+      console.error('Login error:', error)
+      toast.error('로그인 실패: 이메일 또는 비밀번호를 확인하세요.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    alert('회원가입이 완료되었습니다. 로그인해 주세요.')
-    setIsLoginMode(true)
-    setPassword('')
-    setOperatorCode('')
+    setIsRegistering(true)
+    try {
+      await apiClient.post('/api/auth/signup', {
+        email: signupEmail,
+        password: signupPassword,
+        organizationCode: signupOrgCode,
+        name: '새로운 구성원',
+        nickname: signupEmail.split('@')[0],
+        age: 25,
+        gender: 'MALE'
+      })
+      
+      toast.success('회원가입이 완료되었습니다! 로그인해 주세요.')
+      setIsLoginMode(true)
+      setSignupEmail('')
+      setSignupPassword('')
+      setSignupOrgCode('')
+      setOperatorCode(signupEmail) 
+      setPassword('')
+    } catch (error: any) {
+      console.error('Register error:', error)
+      const errorMsg = error.response?.data?.message || '회원가입에 실패했습니다. 입력 정보를 확인해 주세요.'
+      if (error.response?.status === 409) {
+        toast.error('이미 존재하는 이메일 또는 조직 코드 오류입니다.')
+      } else {
+        toast.error(errorMsg)
+      }
+    } finally {
+      setIsRegistering(false)
+    }
   }
 
   const [riskUsersState, setRiskUsersState] = useState<RiskUser[]>(initialRiskUsers)
@@ -301,6 +351,7 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <div className="flex min-h-screen bg-slate-50 items-center justify-center p-4">
+        <Toaster position="top-right" />
         <div className="w-full max-w-md p-8 bg-white border border-slate-200 rounded-3xl shadow-xl flex flex-col items-center">
           <div className="grid w-16 h-16 place-items-center bg-slate-900 rounded-2xl text-white mb-6 shadow-md">
             <Lock size={32} />
@@ -315,16 +366,28 @@ export default function App() {
           
           {isLoginMode ? (
             <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
-              <input type="email" placeholder="이메일" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="password" placeholder="비밀번호" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">로그인</button>
+              <input type="email" placeholder="이메일" value={operatorCode || ''} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="password" placeholder="비밀번호" value={password || ''} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <button 
+                type="submit" 
+                disabled={isLoading}
+                className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-all disabled:bg-slate-300"
+              >
+                {isLoading ? '연결 중...' : '로그인'}
+              </button>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="w-full flex flex-col gap-4">
-              <input type="text" placeholder="조직 코드" value={operatorCode} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="email" placeholder="이메일" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="password" placeholder="사용할 비밀번호" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform">회원가입</button>
+              <input type="text" placeholder="조직 코드 (예: ORG001)" value={signupOrgCode || ''} onChange={e => setSignupOrgCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="email" placeholder="사용할 이메일" value={signupEmail || ''} onChange={e => setSignupEmail(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+              <input type="password" placeholder="사용할 비밀번호 (4자 이상)" value={signupPassword || ''} onChange={e => setSignupPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" minLength={4} required />
+              <button 
+                type="submit" 
+                disabled={isRegistering}
+                className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-all disabled:bg-slate-500"
+              >
+                {isRegistering ? '가입 처리 중...' : '회원가입'}
+              </button>
             </form>
           )}
         </div>
@@ -334,6 +397,7 @@ export default function App() {
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] min-h-screen bg-slate-50">
+      <Toaster position="top-right" />
       {/* Sidebar - Dark Figma Theme */}
       <aside className="sticky top-0 flex flex-col h-screen p-6 bg-slate-950 text-slate-300 border-r border-slate-800 z-10 overflow-y-auto">
         <div className="flex items-center gap-3 pb-6 mb-2 border-b border-slate-800">
