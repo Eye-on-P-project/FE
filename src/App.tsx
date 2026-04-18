@@ -71,11 +71,11 @@ function SummaryCard({ icon: Icon, label, value, detail }: { icon: any, label: s
   )
 }
 
-function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose, onDelete, onUpdate }: { userName: string, riskUsers: RiskUser[], alertItems: AlertItem[], sessionRows: SessionRow[], onClose: () => void, onDelete: () => void, onUpdate: (team: string) => void }) {
+function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose, onDelete }: { userName: string, riskUsers: RiskUser[], alertItems: AlertItem[], sessionRows: SessionRow[], onClose: () => void, onDelete: () => void }) {
   const [filterDays, setFilterDays] = useState<number | null>(7)
   const [editMode, setEditMode] = useState(false)
-  const user = riskUsers.find(u => u.name === userName) || { name: userName, team: 'UNKNOWN', alertCount: 0, sessionsToday: 0 }
-  const [newTeam, setNewTeam] = useState(user.team)
+  const user = riskUsers.find(u => u.name === userName) || { name: userName, alertCount: 0, sessionsToday: 0 }
+  
 
   const filterByDate = (date: string) => { 
     if (!filterDays) return true; 
@@ -95,18 +95,6 @@ function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose
             </div>
             <div>
               <h2 className="m-0 text-xl font-bold text-slate-900">{userName}</h2>
-              {editMode ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <input type="text" value={newTeam} onChange={e => setNewTeam(e.target.value)} className="px-2 py-1 text-sm border border-slate-300 rounded outline-none" />
-                  <button type="button" onClick={() => { onUpdate(newTeam); setEditMode(false) }} className="px-3 py-1 text-xs font-bold text-white bg-blue-600 rounded">저장</button>
-                  <button type="button" onClick={() => { setNewTeam(user.team); setEditMode(false) }} className="px-3 py-1 text-xs font-bold text-slate-600 bg-slate-200 rounded">취소</button>
-                </div>
-              ) : (
-                <p className="m-0 text-sm text-slate-500 mt-1 flex items-center gap-2">
-                  소속: {user.team}
-                  <button type="button" onClick={() => setEditMode(true)} className="text-blue-500 hover:text-blue-700"><SquarePen size={14} /></button>
-                </p>
-              )}
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">닫기</button>
@@ -188,7 +176,7 @@ function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose
 
         <footer className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
           <button type="button" onClick={() => { if(confirm('정말 이 사용자를 삭제하시겠습니까?')) { onDelete(); onClose(); } }} className="text-sm font-bold text-red-500 hover:text-red-700">사용자 삭제</button>
-          <p className="m-0 text-xs text-slate-400">ID: {userName.toLowerCase()}_{user.team.replace(/\s/g, '')}</p>
+          <p className="m-0 text-xs text-slate-400">ID: {userName.toLowerCase()}</p>
         </footer>
       </div>
     </div>
@@ -326,9 +314,9 @@ export default function App() {
   const [statEndDate, setStatEndDate] = useState(todayStr)
 
   const [membersQuery, setMembersQuery] = useState('')
-  const [membersTeamFilter, setMembersTeamFilter] = useState('all')
+  
   const [email, setEmail] = useState('')
-  const [team, setTeam] = useState('운수팀 A')
+  
   const [showAddMember, setShowAddMember] = useState(false)
 
   const [alertFilterStartDate, setAlertFilterStartDate] = useState(weekAgoStr)
@@ -336,8 +324,8 @@ export default function App() {
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const handleExport = () => {
-    const csvContent = "\uFEFFDate,Time,User,Team,Level,Note\n"
-      + alertItems.map(a => `${a.date},${a.time},${a.user},${a.team},${a.level},${a.note}`).join("\n");
+    const csvContent = "\uFEFFDate,Time,User,Level,Note\n"
+      + alertItems.map(a => `${a.date},${a.time},${a.user},${a.level},${a.note}`).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -574,7 +562,7 @@ export default function App() {
                               <div className={`w-2 h-2 rounded-full ${u.alertCount >= 5 ? 'bg-red-500' : u.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                               <div>
                                 <strong className="block text-sm font-bold text-slate-900 leading-none mb-1">{u.name}</strong>
-                                <span className="text-xs text-slate-500">{u.team}</span>
+                                
                               </div>
                             </div>
                             <div className="text-right">
@@ -689,7 +677,7 @@ export default function App() {
                                 <span className="text-[10px] font-bold text-slate-400">{currentSession.duration}</span>
                               </div>
                               <strong className="text-lg font-black text-slate-900 mb-1">{user.name}</strong>
-                              <span className="text-xs text-slate-500 mb-3">{user.team}</span>
+                              
                               
                               <div className="mt-auto flex justify-end">
                                 <button onClick={() => setExpandedUsers(prev => ({ ...prev, [user.name]: !prev[user.name] }))} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
@@ -728,7 +716,7 @@ export default function App() {
                             <div className="flex justify-between items-start">
                               <div>
                                 <strong className="text-red-700 font-bold block mb-1">{alert.user}</strong>
-                                <span className="text-xs text-slate-500">{alert.team}</span>
+                                
                               </div>
                               <span className={`px-2 py-1 rounded-md text-[10px] font-bold ${alert.level === 'L2' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>{alert.level === 'L2' ? '수면' : '졸음'}</span>
                             </div>
@@ -767,24 +755,21 @@ export default function App() {
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input type="text" placeholder="이름 또는 부서 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
+                  <input type="text" placeholder="이름 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
                 </div>
-                <select value={membersTeamFilter} onChange={e => setMembersTeamFilter(e.target.value)} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium">
-                  <option value="all">모든 부서</option>
-                  {Array.from(new Set(riskUsersState.map(u => u.team))).map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 text-slate-500">
-                    <tr><th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th><th className="p-4 font-bold border-b border-slate-100">부서</th><th className="p-4 font-bold border-b border-slate-100">상태</th><th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th></tr>
+                    <tr><th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th><th className="p-4 font-bold border-b border-slate-100">상태</th><th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th></tr>
                   </thead>
                   <tbody>
-                    {riskUsersState.filter(u => (membersTeamFilter === 'all' || u.team === membersTeamFilter) && u.name.includes(membersQuery)).map(u => (
+                    {riskUsersState.filter(u => u.name.includes(membersQuery)).map(u => (
                       <tr key={u.name} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                         <td className="p-4 font-bold text-slate-900">{u.name}</td>
-                        <td className="p-4 text-slate-600">{u.team}</td>
+                        
                         <td className="p-4">
                           <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100">활성</span>
                         </td>
@@ -834,7 +819,7 @@ export default function App() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 text-slate-500">
-                    <tr><th className="p-4 font-bold border-b border-slate-100">일시</th><th className="p-4 font-bold border-b border-slate-100">사용자</th><th className="p-4 font-bold border-b border-slate-100">소속</th><th className="p-4 font-bold border-b border-slate-100">단계</th><th className="p-4 font-bold border-b border-slate-100">내용</th></tr>
+                    <tr><th className="p-4 font-bold border-b border-slate-100">일시</th><th className="p-4 font-bold border-b border-slate-100">사용자</th><th className="p-4 font-bold border-b border-slate-100">단계</th><th className="p-4 font-bold border-b border-slate-100">내용</th></tr>
                   </thead>
                   <tbody>
                     {alertItems.filter(item => {
@@ -848,7 +833,7 @@ export default function App() {
                       <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                         <td className="p-4 text-slate-600 whitespace-nowrap">{item.date} {item.time}</td>
                         <td className="p-4 font-bold text-slate-900">{item.user}</td>
-                        <td className="p-4 text-slate-600">{item.team}</td>
+                        
                         <td className="p-4">
                           <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-black tracking-wider ${item.level === 'L1' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                             {item.level === 'L1' ? '졸음' : '수면'}
@@ -998,7 +983,7 @@ export default function App() {
                                 <div className="grid w-8 h-8 place-items-center rounded-full bg-red-100 text-red-600 font-black text-sm">{index + 1}</div>
                                 <div>
                                   <strong className="block text-sm font-bold text-slate-900">{name}</strong>
-                                  <span className="text-xs text-slate-500">{userMeta?.team || '알 수 없음'}</span>
+                                  
                                 </div>
                               </div>
                               <div className="text-right">
@@ -1055,7 +1040,7 @@ export default function App() {
         )}
       </main>
 
-      {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} riskUsers={riskUsersState} alertItems={alertItems} sessionRows={sessionRows} onClose={() => setSelectedUserForDetail(null)} onDelete={() => { setRiskUsersState(prev => prev.filter(u => u.name !== selectedUserForDetail)) }} onUpdate={(team) => { setRiskUsersState(prev => prev.map(u => u.name === selectedUserForDetail ? { ...u, team } : u)) }} />}
+      {selectedUserForDetail && <UserDetailModal userName={selectedUserForDetail} riskUsers={riskUsersState} alertItems={alertItems} sessionRows={sessionRows} onClose={() => setSelectedUserForDetail(null)} onDelete={() => { setRiskUsersState(prev => prev.filter(u => u.name !== selectedUserForDetail)) }}  />}
       {showAddMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-xl">
@@ -1064,15 +1049,11 @@ export default function App() {
               <button type="button" onClick={() => setShowAddMember(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">닫기</button>
             </header>
             <div className="p-6">
-              <p className="text-sm text-slate-500 mb-6">새로운 구성원의 이메일과 소속을 입력하세요.</p>
+              <p className="text-sm text-slate-500 mb-6">새로운 구성원의 이메일을 입력하세요.</p>
               <form onSubmit={e => { e.preventDefault(); alert(`${email} 구성원이 추가되었습니다.`); setShowAddMember(false); setEmail(''); }} className="flex flex-col gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">이메일</label>
                   <input type="email" placeholder="user@eyeon.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">초기 소속 (팀)</label>
-                  <input type="text" placeholder="소속 팀 입력" value={team} onChange={e => setTeam(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
                 </div>
                 <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">구성원 추가 완료</button>
               </form>

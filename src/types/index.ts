@@ -15,7 +15,6 @@ export type NavigationItem = {
 
 export type AlertItem = {
   user: string
-  team: string
   level: 'L1' | 'L2'
   date: string
   time: string
@@ -25,7 +24,6 @@ export type AlertItem = {
 
 export type RiskUser = {
   name: string
-  team: string
   alertCount: number
   sessionsToday: number
   isOnline: boolean
