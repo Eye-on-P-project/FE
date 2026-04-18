@@ -35,7 +35,7 @@ import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
 import apiClient from './api/client'
-import type { LoginResponse } from './types/api'
+import type { LoginResponse, RealtimeSummaryResponse } from './types/api'
 
 import {
   navigationItems,
@@ -252,6 +252,19 @@ export default function App() {
     localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(allVisible))
   }
 
+  const handleLogout = async () => {
+    try {
+      await apiClient.post('/api/auth/logout')
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      localStorage.removeItem('accessToken')
+      localStorage.removeItem('userRole')
+      setIsLoggedIn(false)
+      toast.success('안전하게 로그아웃 되었습니다.')
+    }
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -322,6 +335,25 @@ export default function App() {
   const [alertFilterStartDate, setAlertFilterStartDate] = useState(weekAgoStr)
   const [alertFilterEndDate, setAlertFilterEndDate] = useState(todayStr)
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
+
+  const [realtimeSummary, setRealtimeSummary] = useState<RealtimeSummaryResponse | null>(null)
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const fetchSummary = async () => {
+      try {
+        const response = await apiClient.get<RealtimeSummaryResponse>('/api/monitoring/dashboard/realtime-summary')
+        setRealtimeSummary(response.data)
+      } catch (error) {
+        console.error('Failed to fetch realtime summary:', error)
+      }
+    }
+
+    fetchSummary()
+    const interval = setInterval(fetchSummary, 5000) // 5초마다 갱신
+    return () => clearInterval(interval)
+  }, [isLoggedIn])
 
   const handleExport = () => {
     const csvContent = "\uFEFFDate,Time,User,Level,Note\n"
@@ -534,9 +566,9 @@ export default function App() {
                   </div>
                   <div className="flex-1 overflow-auto p-4 custom-scrollbar">
                     {id === 'activeUsers' && (() => {
-                      const total = riskUsersState.length;
-                      const active = riskUsersState.filter(u => u.isOnline).length;
-                      const alerting = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                      const total = realtimeSummary?.totalMemberCount ?? riskUsersState.length;
+                      const active = realtimeSummary?.activeSessionCount ?? riskUsersState.filter(u => u.isOnline).length;
+                      const alerting = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
                       return (
                         <div className="flex flex-col h-full justify-between gap-4">
                           <div className="flex-1 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-center">
@@ -649,8 +681,18 @@ export default function App() {
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <SummaryCard icon={Activity} label="현재 모니터링 인원" value={riskUsersState.filter(u => u.isOnline).length.toString()} detail={`활성화 ${riskUsersState.filter(u => u.isOnline).length}명 / 비활성화 ${riskUsersState.filter(u => !u.isOnline).length}명`} />
-              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === todayStr).length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === todayStr && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === todayStr && a.level === 'L2').length}건`} />
+              <SummaryCard 
+                icon={Activity} 
+                label="현재 모니터링 인원" 
+                value={realtimeSummary?.activeSessionCount.toString() ?? riskUsersState.filter(u => u.isOnline).length.toString()} 
+                detail={`전체 구성원 ${realtimeSummary?.totalMemberCount ?? riskUsersState.length}명 중 모니터링 활성화 상태`} 
+              />
+              <SummaryCard 
+                icon={BellRing} 
+                label="실시간 경고 (진행중)" 
+                value={realtimeSummary?.warningSessionCount.toString() ?? alertItems.filter(a => a.date === todayStr).length.toString()} 
+                detail={`졸음 ${realtimeSummary?.drowsyWarningSessionCount ?? 0}건 / 수면 ${realtimeSummary?.sleepWarningSessionCount ?? 0}건`} 
+              />
             </div>
 
             {(() => {
@@ -1031,7 +1073,7 @@ export default function App() {
               <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit">
                 <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
                 <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
-                <button type="button" onClick={() => setIsLoggedIn(false)} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
+                <button type="button" onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
                   <LogOut size={18} /> 안전하게 로그아웃
                 </button>
               </div>
