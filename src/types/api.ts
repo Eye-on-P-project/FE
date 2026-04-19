@@ -3,8 +3,8 @@
 export interface LoginResponse {
   userId: string;
   accessToken: string;
-  refreshToken?: string;
-  role: string;
+  refreshToken: string | null;
+  role: 'ADMIN' | 'USER';
 }
 
 export interface MeResponse {
