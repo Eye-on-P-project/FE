@@ -25,3 +25,112 @@ export interface RealtimeSummaryResponse {
   drowsyWarningSessionCount: number;
   sleepWarningSessionCount: number;
 }
+
+export type MonitoringEventType = 'NORMAL' | 'DROWSY' | 'SLEEP';
+export type NotificationType = 'NORMAL' | 'DROWSY' | 'SLEEP';
+
+export interface MonitoringEventResponse {
+  eventId: string;
+  sessionId: string;
+  eventType: MonitoringEventType;
+  occurredAtApp: string;
+  occurredAtServer: string;
+  drowsyCount: number;
+  sleepCount: number;
+}
+
+export interface MonitoringNotificationResponse {
+  notificationId: string | null;
+  userId: string;
+  targetUserId: string;
+  userName: string;
+  type: NotificationType;
+  content: string;
+  occurredAt: string;
+}
+
+export interface MonitoringNotificationPageResponse {
+  items: MonitoringNotificationResponse[];
+  nextCursor: string | null;
+  hasNext: boolean;
+}
+
+export interface OrganizationRecordResponse {
+  id: string;
+  code: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface MonitoringHourlyRiskBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  totalRiskCount: number;
+}
+
+export interface MonitoringHourlyRisk24hResponse {
+  rangeStart: string;
+  rangeEnd: string;
+  buckets: MonitoringHourlyRiskBucket[];
+}
+
+export type RiskStatsGranularity = 'HOUR' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+
+export interface OrganizationRiskStatsBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  sessionCount: number;
+  drowsyCount: number;
+  sleepCount: number;
+  totalRiskCount: number;
+}
+
+export interface OrganizationRiskTopMember {
+  userId: string;
+  name: string;
+  totalRiskCount: number;
+}
+
+export interface OrganizationRiskStatsResponse {
+  granularity: RiskStatsGranularity;
+  from: string;
+  to: string;
+  series: OrganizationRiskStatsBucket[];
+  top5Members: OrganizationRiskTopMember[];
+}
+
+export interface OrganizationRiskUserResponse {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  nickname: string | null;
+  totalSessionCount: number;
+  drowsyCount: number;
+  sleepCount: number;
+  totalRiskCount: number;
+}
+
+export interface MonitoringRecentEndedSessionResponse {
+  sessionId: string;
+  userId: string;
+  userName: string | null;
+  startedAtApp: string;
+  endedAtApp: string | null;
+  durationMinutes: number;
+  drowsyCount: number;
+  sleepCount: number;
+  totalRiskCount: number;
+}
+
+export type UserRole = 'ADMIN' | 'USER';
+
+export interface OrganizationMemberResponse {
+  memberId: string;
+  organizationId: string;
+  userId: string;
+  email: string | null;
+  name: string | null;
+  nickname: string | null;
+  role: UserRole | null;
+  createdAt: string;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import {
   Activity,
@@ -35,8 +35,32 @@ import 'react-resizable/css/styles.css'
 import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
-import apiClient, { clearAccessToken, ensureWebSession, setAccessToken } from './api/client'
-import type { LoginResponse, RealtimeSummaryResponse } from './types/api'
+import apiClient, { clearAccessToken, ensureWebSession, getAccessToken, setAccessToken } from './api/client'
+import {
+  addOrganizationMember,
+  fetchOrganizationMembers,
+  removeOrganizationMember,
+} from './api/members'
+import {
+  fetchDashboardNotifications,
+  fetchDashboardHourlyRisk24h,
+  fetchDashboardRecentEndedSessions,
+  fetchMyOrganizationId,
+  fetchOrganizationRiskStats,
+  fetchOrganizationRiskUsers,
+  streamRealtimeSummary,
+} from './api/monitoring'
+import type {
+  LoginResponse,
+  MonitoringHourlyRisk24hResponse,
+  MonitoringNotificationResponse,
+  MonitoringRecentEndedSessionResponse,
+  OrganizationMemberResponse,
+  OrganizationRiskStatsResponse,
+  OrganizationRiskUserResponse,
+  RealtimeSummaryResponse,
+  RiskStatsGranularity,
+} from './types/api'
 
 import {
   navigationItems,
@@ -44,9 +68,7 @@ import {
   widgetMeta,
   defaultLayouts,
   initialRiskUsers,
-  alertItems,
-  sessionRows,
-  hourlyTrendData,
+  sessionRows as initialSessionRows,
   todayStr,
   weekAgoStr
 } from './data/mockData'
@@ -56,6 +78,44 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
+const NOTIFICATION_PAGE_SIZE = 50
+const MAX_ALERT_ITEMS = 500
+
+function serializeLayouts(layouts: ResponsiveLayouts) {
+  return JSON.stringify(layouts)
+}
+
+function isRealtimeSummaryEqual(
+  previous: RealtimeSummaryResponse | null,
+  next: RealtimeSummaryResponse
+) {
+  if (!previous) {
+    return false
+  }
+
+  return (
+    previous.totalMemberCount === next.totalMemberCount
+    && previous.activeSessionCount === next.activeSessionCount
+    && previous.warningSessionCount === next.warningSessionCount
+    && previous.drowsyWarningSessionCount === next.drowsyWarningSessionCount
+    && previous.sleepWarningSessionCount === next.sleepWarningSessionCount
+  )
+}
+
+function DashboardClockBadge() {
+  const [currentTime, setCurrentTime] = useState(() => new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
+      <Clock3 size={16} /> {currentTime.toLocaleString('ko-KR')} 기준
+    </div>
+  )
+}
 
 function SummaryCard({ icon: Icon, label, value, detail }: { icon: any, label: string, value: string, detail: string }) {
   return (
@@ -182,14 +242,6 @@ function UserDetailModal({ userName, riskUsers: _riskUsers, alertItems, sessionR
   )
 }
 
-function getWeekOfMonthStr(dateStr: string) {
-  const d = new Date(dateStr)
-  const month = d.getMonth() + 1
-  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).getDay()
-  const week = Math.ceil((d.getDate() + firstDay) / 7)
-  return `${d.getFullYear()}-${String(month).padStart(2, '0')} ${week}주차`
-}
-
 function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
   if (axios.isAxiosError<{ message?: string }>(error)) {
     const message = error.response?.data?.message
@@ -198,6 +250,197 @@ function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
     }
   }
   return fallbackMessage
+}
+
+const statTypeToGranularity: Record<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly', RiskStatsGranularity> = {
+  hourly: 'HOUR',
+  daily: 'DAY',
+  weekly: 'WEEK',
+  monthly: 'MONTH',
+  yearly: 'YEAR',
+}
+
+function getDateBefore(baseDate: Date, days: number) {
+  const date = new Date(baseDate)
+  date.setDate(date.getDate() - days)
+  return date
+}
+
+function toInputDateString(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatHourLabel(dateTime: string) {
+  const date = new Date(dateTime)
+  return `${String(date.getHours()).padStart(2, '0')}:00`
+}
+
+function formatBucketLabel(
+  bucketStart: string,
+  bucketEnd: string,
+  statType: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+) {
+  const start = new Date(bucketStart)
+  const end = new Date(bucketEnd)
+
+  if (statType === 'hourly') {
+    return `${start.getMonth() + 1}/${start.getDate()} ${String(start.getHours()).padStart(2, '0')}:00`
+  }
+  if (statType === 'daily') {
+    return `${start.getMonth() + 1}/${start.getDate()}`
+  }
+  if (statType === 'weekly') {
+    return `${start.getMonth() + 1}/${start.getDate()}~${end.getMonth() + 1}/${end.getDate()}`
+  }
+  if (statType === 'monthly') {
+    return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
+  }
+  return `${start.getFullYear()}`
+}
+
+function formatMemberRole(role: string | null | undefined) {
+  if (role === 'ADMIN') {
+    return '관리자'
+  }
+  if (role === 'USER') {
+    return '구성원'
+  }
+  return role ?? '미정'
+}
+
+function formatMemberCreatedAt(createdAt: string | null | undefined) {
+  if (!createdAt) {
+    return '-'
+  }
+  const parsed = new Date(createdAt)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return parsed.toLocaleString('ko-KR')
+}
+
+function formatSessionDate(dateTime: string) {
+  const parsed = new Date(dateTime)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+}
+
+function formatSessionTime(dateTime: string) {
+  const parsed = new Date(dateTime)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
+}
+
+function formatSessionDuration(durationMinutes: number | null | undefined) {
+  const totalMinutes = Math.max(0, Number(durationMinutes ?? 0))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${minutes}m`
+}
+
+function formatSessionAlerts(drowsyCount: number, sleepCount: number) {
+  const alerts: string[] = []
+  if (drowsyCount > 0) {
+    alerts.push(`졸음 ${drowsyCount}회`)
+  }
+  if (sleepCount > 0) {
+    alerts.push(`수면 ${sleepCount}회`)
+  }
+  return alerts.length > 0 ? alerts.join(' / ') : '정상'
+}
+
+function mapRiskUsersResponseToWidgetRows(response: OrganizationRiskUserResponse[]): RiskUser[] {
+  return response.map((row) => {
+    const resolvedName = row.name?.trim() || row.nickname?.trim() || row.email?.trim() || `사용자 ${row.userId}`
+    return {
+      name: resolvedName,
+      alertCount: row.totalRiskCount,
+      sessionsToday: row.totalSessionCount,
+      isOnline: true,
+    }
+  })
+}
+
+function mapRecentEndedSessionsToRows(response: MonitoringRecentEndedSessionResponse[]): SessionRow[] {
+  return response.map((row) => ({
+    user: row.userName?.trim() || `사용자 ${row.userId}`,
+    date: formatSessionDate(row.startedAtApp),
+    startTime: formatSessionTime(row.startedAtApp),
+    duration: formatSessionDuration(row.durationMinutes),
+    alerts: formatSessionAlerts(row.drowsyCount, row.sleepCount),
+  }))
+}
+
+function mapNotificationToAlertItem(
+  notification: MonitoringNotificationResponse,
+  status: AlertItem['status'] = '종료됨'
+): AlertItem {
+  const level = notification.type === 'SLEEP' ? 'L2' : 'L1'
+  const note = notification.content?.trim().length
+    ? notification.content
+    : level === 'L2'
+      ? '수면 상태 경고가 감지되었습니다.'
+      : '졸음 의심 경고가 감지되었습니다.'
+
+  return {
+    notificationId: notification.notificationId ?? undefined,
+    userId: notification.userId,
+    user: notification.userName?.trim() || `사용자 ${notification.userId}`,
+    level,
+    date: formatSessionDate(notification.occurredAt),
+    time: formatSessionTime(notification.occurredAt),
+    note,
+    occurredAt: notification.occurredAt,
+    status,
+  }
+}
+
+function getAlertTimestamp(item: AlertItem): number {
+  if (item.occurredAt) {
+    const occurredAtTime = new Date(item.occurredAt).getTime()
+    if (!Number.isNaN(occurredAtTime)) {
+      return occurredAtTime
+    }
+  }
+  const fallbackTime = new Date(`${item.date}T${item.time}:00`).getTime()
+  return Number.isNaN(fallbackTime) ? 0 : fallbackTime
+}
+
+function mergeAlertItems(previous: AlertItem[], incoming: AlertItem[]): AlertItem[] {
+  const mergedMap = new Map<string, AlertItem>()
+  const put = (item: AlertItem) => {
+    const key = item.notificationId ?? `${item.user}|${item.level}|${item.date}|${item.time}|${item.note}`
+    mergedMap.set(key, item)
+  }
+
+  previous.forEach(put)
+  incoming.forEach(put)
+
+  return Array.from(mergedMap.values())
+    .sort((a, b) => getAlertTimestamp(b) - getAlertTimestamp(a))
+    .slice(0, MAX_ALERT_ITEMS)
+}
+
+function applyRealtimeNotification(previous: AlertItem[], notification: MonitoringNotificationResponse): AlertItem[] {
+  if (notification.type === 'NORMAL') {
+    return previous.map((item) =>
+      item.userId === notification.userId && item.status === '진행중'
+        ? { ...item, status: '종료됨' as const }
+        : item
+    )
+  }
+
+  const nextAlert = mapNotificationToAlertItem(notification, '진행중')
+  const closedPrevious = previous.map((item) =>
+    item.userId === nextAlert.userId && item.status === '진행중'
+      ? { ...item, status: '종료됨' as const }
+      : item
+  )
+  return mergeAlertItems(closedPrevious, [nextAlert])
 }
 
 export default function App() {
@@ -212,13 +455,6 @@ export default function App() {
   const [signupOrgCode, setSignupOrgCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
-
-  const [currentTime, setCurrentTime] = useState(new Date())
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -242,6 +478,7 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
 
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(defaultLayouts)
+  const latestLayoutsSerializedRef = useRef(serializeLayouts(defaultLayouts))
   const [visibleWidgets, setVisibleWidgets] = useState<Record<WidgetId, boolean>>({
     activeUsers: true,
     riskUsers: true,
@@ -253,7 +490,13 @@ export default function App() {
   useEffect(() => {
     const savedLayouts = localStorage.getItem(LAYOUTS_STORAGE_KEY)
     if (savedLayouts) {
-      try { setLayouts(JSON.parse(savedLayouts)) } catch (e) { console.error('Failed to parse layouts:', e) }
+      try {
+        const parsedLayouts = JSON.parse(savedLayouts) as ResponsiveLayouts
+        setLayouts(parsedLayouts)
+        latestLayoutsSerializedRef.current = serializeLayouts(parsedLayouts)
+      } catch (e) {
+        console.error('Failed to parse layouts:', e)
+      }
     }
     const savedVisible = localStorage.getItem(VISIBLE_STORAGE_KEY)
     if (savedVisible) {
@@ -262,8 +505,13 @@ export default function App() {
   }, [])
 
   const handleLayoutChange = (_: any, allLayouts: ResponsiveLayouts) => {
+    const nextSerializedLayouts = serializeLayouts(allLayouts)
+    if (nextSerializedLayouts === latestLayoutsSerializedRef.current) {
+      return
+    }
+    latestLayoutsSerializedRef.current = nextSerializedLayouts
     setLayouts(allLayouts)
-    localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(allLayouts))
+    localStorage.setItem(LAYOUTS_STORAGE_KEY, nextSerializedLayouts)
   }
 
   const toggleWidget = (id: WidgetId) => {
@@ -273,8 +521,10 @@ export default function App() {
   }
 
   const resetDashboard = () => {
+    const serializedDefaultLayouts = serializeLayouts(defaultLayouts)
     setLayouts(defaultLayouts)
-    localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(defaultLayouts))
+    latestLayoutsSerializedRef.current = serializedDefaultLayouts
+    localStorage.setItem(LAYOUTS_STORAGE_KEY, serializedDefaultLayouts)
     const allVisible = { activeUsers: true, riskUsers: true, alertFeed: true, hourlyTrend: true, sessionTable: true }
     setVisibleWidgets(allVisible)
     localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(allVisible))
@@ -348,14 +598,34 @@ export default function App() {
   }
 
   const [riskUsersState, setRiskUsersState] = useState<RiskUser[]>(initialRiskUsers)
+  const [isRiskUsersLoading, setIsRiskUsersLoading] = useState(false)
+  const [alertItems, setAlertItems] = useState<AlertItem[]>([])
+  const [notificationsNextCursor, setNotificationsNextCursor] = useState<string | null>(null)
+  const [hasMoreNotifications, setHasMoreNotifications] = useState(false)
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false)
+  const [isLoadingMoreNotifications, setIsLoadingMoreNotifications] = useState(false)
+  const [sessionRows, setSessionRows] = useState<SessionRow[]>(initialSessionRows)
+  const [isRecentSessionsLoading, setIsRecentSessionsLoading] = useState(false)
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({})
+
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+  const [isOrganizationLoading, setIsOrganizationLoading] = useState(false)
+
+  const [dashboardHourlyRisk, setDashboardHourlyRisk] = useState<MonitoringHourlyRisk24hResponse | null>(null)
+  const [isDashboardHourlyLoading, setIsDashboardHourlyLoading] = useState(false)
 
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
   const [statStartDate, setStatStartDate] = useState(weekAgoStr)
   const [statEndDate, setStatEndDate] = useState(todayStr)
+  const [analysisStats, setAnalysisStats] = useState<OrganizationRiskStatsResponse | null>(null)
+  const [isAnalysisStatsLoading, setIsAnalysisStatsLoading] = useState(false)
 
   const [membersQuery, setMembersQuery] = useState('')
+  const [organizationMembers, setOrganizationMembers] = useState<OrganizationMemberResponse[]>([])
+  const [isMembersLoading, setIsMembersLoading] = useState(false)
+  const [isAddingMember, setIsAddingMember] = useState(false)
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   
   const [email, setEmail] = useState('')
   
@@ -366,23 +636,190 @@ export default function App() {
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const [realtimeSummary, setRealtimeSummary] = useState<RealtimeSummaryResponse | null>(null)
+  const isRealtimeTab = activeTab === 'dashboard' || activeTab === 'live' || activeTab === 'alerts'
 
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || !isRealtimeTab) {
+      return
+    }
 
-    const fetchSummary = async () => {
-      try {
-        const response = await apiClient.get<RealtimeSummaryResponse>('/api/monitoring/dashboard/realtime-summary')
-        setRealtimeSummary(response.data)
-      } catch (error) {
-        console.error('Failed to fetch realtime summary:', error)
+    let isCancelled = false
+    let abortController: AbortController | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+    const waitBeforeRetry = (delayMs: number) =>
+      new Promise<void>((resolve) => {
+        retryTimer = setTimeout(resolve, delayMs)
+      })
+
+    const connect = async () => {
+      while (!isCancelled) {
+        try {
+          let accessToken = getAccessToken()
+          if (!accessToken) {
+            const refreshed = await ensureWebSession()
+            if (!refreshed || isCancelled) {
+              break
+            }
+            accessToken = getAccessToken()
+            if (!accessToken) {
+              break
+            }
+          }
+
+          abortController = new AbortController()
+          await streamRealtimeSummary({
+            accessToken,
+            signal: abortController.signal,
+            onSummary: (summary) => {
+              if (!isCancelled) {
+                setRealtimeSummary((previous) => (
+                  isRealtimeSummaryEqual(previous, summary) ? previous : summary
+                ))
+              }
+            },
+            onAlert: (notification) => {
+              if (isCancelled) {
+                return
+              }
+              setAlertItems((prev) => applyRealtimeNotification(prev, notification))
+            },
+          })
+        } catch (error) {
+          const isAbortError = error instanceof DOMException && error.name === 'AbortError'
+          if (isAbortError || isCancelled) {
+            break
+          }
+
+          if (error instanceof Error && error.message === 'SSE_UNAUTHORIZED') {
+            const refreshed = await ensureWebSession()
+            if (!refreshed) {
+              clearAccessToken()
+              setRealtimeSummary(null)
+              setIsLoggedIn(false)
+              break
+            }
+          }
+        }
+
+        if (isCancelled) {
+          break
+        }
+        await waitBeforeRetry(1500)
       }
     }
 
-    fetchSummary()
-    const interval = setInterval(fetchSummary, 1000) // 1초마다 갱신
-    return () => clearInterval(interval)
+    const handlePageHide = () => {
+      abortController?.abort()
+    }
+
+    window.addEventListener('pagehide', handlePageHide)
+    connect()
+
+    return () => {
+      isCancelled = true
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+      }
+      abortController?.abort()
+      window.removeEventListener('pagehide', handlePageHide)
+    }
+  }, [isLoggedIn, isRealtimeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setAlertItems([])
+      setNotificationsNextCursor(null)
+      setHasMoreNotifications(false)
+      return
+    }
+
+    let isMounted = true
+
+    const loadInitialNotifications = async () => {
+      setIsNotificationsLoading(true)
+      try {
+        const page = await fetchDashboardNotifications({ limit: NOTIFICATION_PAGE_SIZE })
+        if (!isMounted) {
+          return
+        }
+        const mapped = page.items.map((item) => mapNotificationToAlertItem(item, '종료됨'))
+        setAlertItems((prev) => mergeAlertItems(prev, mapped))
+        setNotificationsNextCursor(page.nextCursor)
+        setHasMoreNotifications(page.hasNext)
+      } catch (error: unknown) {
+        if (isMounted) {
+          toast.error(extractApiErrorMessage(error, '알림 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsNotificationsLoading(false)
+        }
+      }
+    }
+
+    loadInitialNotifications()
+    return () => {
+      isMounted = false
+    }
   }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'alerts') {
+      return
+    }
+
+    let isMounted = true
+
+    const refreshNotificationsOnAlertsTab = async () => {
+      setIsNotificationsLoading(true)
+      try {
+        const page = await fetchDashboardNotifications({ limit: NOTIFICATION_PAGE_SIZE })
+        if (!isMounted) {
+          return
+        }
+        const mapped = page.items.map((item) => mapNotificationToAlertItem(item, '종료됨'))
+        setAlertItems((prev) => mergeAlertItems(prev, mapped))
+        setNotificationsNextCursor(page.nextCursor)
+        setHasMoreNotifications(page.hasNext)
+      } catch (error: unknown) {
+        if (isMounted) {
+          toast.error(extractApiErrorMessage(error, '알림 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsNotificationsLoading(false)
+        }
+      }
+    }
+
+    refreshNotificationsOnAlertsTab()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn, activeTab])
+
+  const handleLoadMoreNotifications = async () => {
+    if (!notificationsNextCursor || isLoadingMoreNotifications) {
+      return
+    }
+
+    setIsLoadingMoreNotifications(true)
+    try {
+      const page = await fetchDashboardNotifications({
+        limit: NOTIFICATION_PAGE_SIZE,
+        cursor: notificationsNextCursor,
+      })
+      const mapped = page.items.map((item) => mapNotificationToAlertItem(item, '종료됨'))
+      setAlertItems((prev) => mergeAlertItems(prev, mapped))
+      setNotificationsNextCursor(page.nextCursor)
+      setHasMoreNotifications(page.hasNext)
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '추가 알림을 불러오지 못했습니다.'))
+    } finally {
+      setIsLoadingMoreNotifications(false)
+    }
+  }
 
   const handleExport = () => {
     const csvContent = "\uFEFFDate,Time,User,Level,Note\n"
@@ -396,6 +833,375 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setOrganizationId(null)
+      setDashboardHourlyRisk(null)
+      setAnalysisStats(null)
+      setOrganizationMembers([])
+      setRiskUsersState(initialRiskUsers)
+      setAlertItems([])
+      setNotificationsNextCursor(null)
+      setHasMoreNotifications(false)
+      setSessionRows(initialSessionRows)
+      return
+    }
+
+    let isMounted = true
+    const loadOrganizationId = async () => {
+      setIsOrganizationLoading(true)
+      try {
+        const resolvedOrganizationId = await fetchMyOrganizationId()
+        if (!isMounted) {
+          return
+        }
+        setOrganizationId(resolvedOrganizationId)
+      } catch (error: unknown) {
+        console.error('Failed to resolve organization id:', error)
+        if (!isMounted) {
+          return
+        }
+        setOrganizationId(null)
+        toast.error(extractApiErrorMessage(error, '조직 정보를 불러오지 못했습니다.'))
+      } finally {
+        if (isMounted) {
+          setIsOrganizationLoading(false)
+        }
+      }
+    }
+
+    loadOrganizationId()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return
+    }
+
+    let isMounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const loadDashboardHourlyRisk = async () => {
+      setIsDashboardHourlyLoading(true)
+      try {
+        const response = await fetchDashboardHourlyRisk24h()
+        if (isMounted) {
+          setDashboardHourlyRisk(response)
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch dashboard hourly risk:', error)
+        if (isMounted && activeTab === 'dashboard') {
+          toast.error(extractApiErrorMessage(error, '대시보드 시간대 통계를 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsDashboardHourlyLoading(false)
+        }
+      }
+    }
+
+    loadDashboardHourlyRisk()
+    if (activeTab === 'dashboard') {
+      intervalId = setInterval(loadDashboardHourlyRisk, 60000)
+    }
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isLoggedIn, activeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn || !organizationId) {
+      return
+    }
+
+    let isMounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const loadRiskUsers = async () => {
+      setIsRiskUsersLoading(true)
+      try {
+        const response = await fetchOrganizationRiskUsers(organizationId)
+        if (isMounted) {
+          setRiskUsersState(mapRiskUsersResponseToWidgetRows(response))
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch organization risk users:', error)
+        if (isMounted && (activeTab === 'dashboard' || activeTab === 'live')) {
+          toast.error(extractApiErrorMessage(error, '위험 사용자 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsRiskUsersLoading(false)
+        }
+      }
+    }
+
+    loadRiskUsers()
+    if (activeTab === 'dashboard') {
+      intervalId = setInterval(loadRiskUsers, 60000)
+    }
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isLoggedIn, organizationId, activeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return
+    }
+
+    let isMounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const loadRecentEndedSessions = async () => {
+      setIsRecentSessionsLoading(true)
+      try {
+        const response = await fetchDashboardRecentEndedSessions(50)
+        if (isMounted) {
+          setSessionRows(mapRecentEndedSessionsToRows(response))
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch recent ended sessions:', error)
+        if (isMounted && (activeTab === 'dashboard' || activeTab === 'live')) {
+          toast.error(extractApiErrorMessage(error, '최근 접속 세션을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsRecentSessionsLoading(false)
+        }
+      }
+    }
+
+    loadRecentEndedSessions()
+    if (activeTab === 'dashboard') {
+      intervalId = setInterval(loadRecentEndedSessions, 60000)
+    }
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isLoggedIn, activeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'statistics') {
+      return
+    }
+    if (!organizationId) {
+      return
+    }
+    if (statStartDate > statEndDate) {
+      setAnalysisStats(null)
+      return
+    }
+
+    let isMounted = true
+    const loadAnalysisStats = async () => {
+      setIsAnalysisStatsLoading(true)
+      try {
+        const response = await fetchOrganizationRiskStats(organizationId, {
+          granularity: statTypeToGranularity[statType],
+          from: statStartDate,
+          to: statEndDate,
+        })
+        if (isMounted) {
+          setAnalysisStats(response)
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch analysis stats:', error)
+        if (isMounted) {
+          setAnalysisStats(null)
+          toast.error(extractApiErrorMessage(error, '분석 통계를 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsAnalysisStatsLoading(false)
+        }
+      }
+    }
+
+    loadAnalysisStats()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn, activeTab, organizationId, statType, statStartDate, statEndDate])
+
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'members') {
+      return
+    }
+
+    let isMounted = true
+
+    const loadMembers = async () => {
+      setIsMembersLoading(true)
+      try {
+        const response = await fetchOrganizationMembers()
+        if (isMounted) {
+          setOrganizationMembers(response)
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch organization members:', error)
+        if (isMounted) {
+          setOrganizationMembers([])
+          toast.error(extractApiErrorMessage(error, '구성원 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsMembersLoading(false)
+        }
+      }
+    }
+
+    loadMembers()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn, activeTab])
+
+  const dashboardHourlyChartData = (dashboardHourlyRisk?.buckets ?? []).map((bucket) => ({
+    label: formatHourLabel(bucket.bucketStart),
+    value: bucket.totalRiskCount,
+  }))
+
+  const dashboardPeakRiskHour = dashboardHourlyChartData.reduce(
+    (best, current) => (current.value > best.value ? current : best),
+    { label: '-', value: 0 }
+  )
+  const dashboardTotalRiskCount = dashboardHourlyChartData.reduce((sum, row) => sum + row.value, 0)
+
+  const analysisSeries = analysisStats?.series ?? []
+  const totalSessions = analysisSeries.reduce((sum, row) => sum + row.sessionCount, 0)
+  const totalDrowsy = analysisSeries.reduce((sum, row) => sum + row.drowsyCount, 0)
+  const totalSleep = analysisSeries.reduce((sum, row) => sum + row.sleepCount, 0)
+  const totalRisk = analysisSeries.reduce((sum, row) => sum + row.totalRiskCount, 0)
+
+  const analysisChartData = analysisSeries.map((row) => ({
+    xKey: row.bucketStart,
+    label: formatBucketLabel(row.bucketStart, row.bucketEnd, statType),
+    l1: row.drowsyCount,
+    l2: row.sleepCount,
+    total: row.totalRiskCount,
+  }))
+
+  const analysisTop5Members = analysisStats?.top5Members ?? []
+
+  const applyStatTypePreset = (type: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly') => {
+    setStatType(type)
+    const today = new Date()
+    const end = toInputDateString(today)
+
+    if (type === 'hourly') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 2)))
+      setStatEndDate(end)
+      return
+    }
+    if (type === 'daily') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 14)))
+      setStatEndDate(end)
+      return
+    }
+    if (type === 'weekly') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 56)))
+      setStatEndDate(end)
+      return
+    }
+    if (type === 'monthly') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 180)))
+      setStatEndDate(end)
+      return
+    }
+
+    setStatStartDate(toInputDateString(getDateBefore(today, 365 * 2)))
+    setStatEndDate(end)
+  }
+
+  const normalizedMembersQuery = membersQuery.trim().toLowerCase()
+  const filteredMembers = organizationMembers.filter((member) => {
+    if (!normalizedMembersQuery) {
+      return true
+    }
+    const keywords = [member.name, member.email, member.nickname]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.toLowerCase())
+    return keywords.some((value) => value.includes(normalizedMembersQuery))
+  })
+
+  const activeRealtimeAlerts = alertItems.filter((item) => item.status === '진행중')
+  const activeAlertCount = activeRealtimeAlerts.length
+  const activeL1AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L1').length
+  const activeL2AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L2').length
+  const filteredAlertItems = alertItems.filter((item) => {
+    const occurredAt = new Date(item.date).getTime()
+    const start = new Date(alertFilterStartDate).getTime()
+    const end = new Date(alertFilterEndDate).getTime()
+
+    if (Number.isNaN(occurredAt) || occurredAt < start || occurredAt > end) {
+      return false
+    }
+    if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) {
+      return false
+    }
+    return true
+  })
+
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail) {
+      return
+    }
+
+    setIsAddingMember(true)
+    try {
+      const createdMember = await addOrganizationMember(normalizedEmail)
+      setOrganizationMembers((prev) => [
+        createdMember,
+        ...prev.filter((member) => member.memberId !== createdMember.memberId),
+      ])
+      toast.success('구성원을 추가했습니다.')
+      setShowAddMember(false)
+      setEmail('')
+    } catch (error: unknown) {
+      console.error('Failed to add organization member:', error)
+      toast.error(extractApiErrorMessage(error, '구성원 추가에 실패했습니다.'))
+    } finally {
+      setIsAddingMember(false)
+    }
+  }
+
+  const handleRemoveMember = async (member: OrganizationMemberResponse) => {
+    const memberName = member.name ?? member.email ?? member.userId
+    if (!confirm(`정말 ${memberName} 구성원을 삭제하시겠습니까?`)) {
+      return
+    }
+
+    setRemovingMemberId(member.memberId)
+    try {
+      await removeOrganizationMember(member.memberId)
+      setOrganizationMembers((prev) => prev.filter((item) => item.memberId !== member.memberId))
+      toast.success('구성원을 삭제했습니다.')
+    } catch (error: unknown) {
+      console.error('Failed to remove organization member:', error)
+      toast.error(extractApiErrorMessage(error, '구성원 삭제에 실패했습니다.'))
+    } finally {
+      setRemovingMemberId(null)
+    }
   }
 
   if (isAuthInitializing) {
@@ -506,9 +1312,7 @@ export default function App() {
                 <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">대시보드</h1>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
-                  <Clock3 size={16} /> {currentTime.toLocaleString('ko-KR')} 기준
-                </div>
+                <DashboardClockBadge />
                 <button onClick={() => setIsEditMode(!isEditMode)} className={`flex items-center gap-2 h-10 px-4 rounded-xl border text-sm font-bold shadow-sm transition-colors ${isEditMode ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                   {isEditMode ? <><Check size={16} /> 편집 완료</> : <><SquarePen size={16} /> 위젯 편집</>}
                 </button>
@@ -539,9 +1343,9 @@ export default function App() {
               </div>
 
               {(() => {
-                const alertCount = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
-                const l1Count = realtimeSummary?.drowsyWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L1').length;
-                const l2Count = realtimeSummary?.sleepWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L2').length;
+                const alertCount = realtimeSummary?.warningSessionCount ?? activeAlertCount;
+                const l1Count = realtimeSummary?.drowsyWarningSessionCount ?? activeL1AlertCount;
+                const l2Count = realtimeSummary?.sleepWarningSessionCount ?? activeL2AlertCount;
                 const hasAlerts = alertCount > 0;
                 
                 return (
@@ -589,7 +1393,7 @@ export default function App() {
               breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
               cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
               rowHeight={30}
-              onLayoutChange={handleLayoutChange}
+              onLayoutChange={isEditMode ? handleLayoutChange : undefined}
               draggableHandle=".drag-handle"
               isDraggable={isEditMode}
               isResizable={isEditMode}
@@ -609,7 +1413,7 @@ export default function App() {
                     {id === 'activeUsers' && (() => {
                       const total = realtimeSummary?.totalMemberCount ?? riskUsersState.length;
                       const active = realtimeSummary?.activeSessionCount ?? riskUsersState.filter(u => u.isOnline).length;
-                      const alerting = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                      const alerting = realtimeSummary?.warningSessionCount ?? activeAlertCount;
                       return (
                         <div className="flex flex-col h-full justify-between gap-4">
                           <div className="flex-1 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-center">
@@ -629,27 +1433,36 @@ export default function App() {
                     })()}
                     {id === 'riskUsers' && (
                       <div className="flex flex-col gap-2">
-                        {riskUsersState.slice(0, 5).map(u => (
-                          <button key={u.name} onClick={() => setSelectedUserForDetail(u.name)} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all text-left w-full">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-2 h-2 rounded-full ${u.alertCount >= 5 ? 'bg-red-500' : u.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                              <div>
-                                <strong className="block text-sm font-bold text-slate-900 leading-none mb-1">{u.name}</strong>
-                                
+                        {isRiskUsersLoading ? (
+                          <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                            위험 사용자 정보를 불러오는 중...
+                          </div>
+                        ) : riskUsersState.length > 0 ? (
+                          riskUsersState.slice(0, 5).map(u => (
+                            <button key={u.name} onClick={() => setSelectedUserForDetail(u.name)} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all text-left w-full">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-2 h-2 rounded-full ${u.alertCount >= 5 ? 'bg-red-500' : u.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                <div>
+                                  <strong className="block text-sm font-bold text-slate-900 leading-none mb-1">{u.name}</strong>
+                                </div>
                               </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Alerts</span>
-                              <strong className={`text-sm font-black ${u.alertCount > 0 ? 'text-red-500' : 'text-slate-500'}`}>{u.alertCount}</strong>
-                            </div>
-                          </button>
-                        ))}
+                              <div className="text-right">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Alerts</span>
+                                <strong className={`text-sm font-black ${u.alertCount > 0 ? 'text-red-500' : 'text-slate-500'}`}>{u.alertCount}</strong>
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                            조회된 위험 사용자가 없습니다.
+                          </div>
+                        )}
                       </div>
                     )}
                     {id === 'alertFeed' && (
                       <div className="flex flex-col gap-3">
-                        {alertItems.slice(0, 4).map((a, i) => (
-                          <div key={i} className="p-3 border border-slate-100 rounded-xl bg-white shadow-sm">
+                        {alertItems.length > 0 ? alertItems.slice(0, 4).map((a, i) => (
+                          <div key={a.notificationId ?? `${a.user}-${a.date}-${a.time}-${i}`} className="p-3 border border-slate-100 rounded-xl bg-white shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider ${a.level === 'L1' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
@@ -661,24 +1474,38 @@ export default function App() {
                             </div>
                             <p className="m-0 text-sm text-slate-600">{a.note}</p>
                           </div>
-                        ))}
+                        )) : (
+                          <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                            최근 알림이 없습니다.
+                          </div>
+                        )}
                       </div>
                     )}
                     {id === 'hourlyTrend' && (
                       <div className="flex flex-col h-full">
                         <div className="flex justify-between items-center mb-4">
-                          <span className="text-xs font-bold text-slate-500">피크 시간: 22:00</span>
-                          <span className="text-xs font-bold text-slate-500">누적: {alertItems.length}건</span>
+                          <span className="text-xs font-bold text-slate-500">피크 시간: {dashboardPeakRiskHour.label}</span>
+                          <span className="text-xs font-bold text-slate-500">누적: {dashboardTotalRiskCount}건</span>
                         </div>
                         <div className="flex-1 min-h-[150px] relative w-full h-full">
-                          <ResponsiveContainer width="99%" height="100%" minHeight={150}>
-                            <LineChart data={hourlyTrendData}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} dy={10} />
-                              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                              <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                            </LineChart>
-                          </ResponsiveContainer>
+                          {isDashboardHourlyLoading ? (
+                            <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                              시간대 통계를 불러오는 중...
+                            </div>
+                          ) : dashboardHourlyChartData.length > 0 ? (
+                            <ResponsiveContainer width="99%" height="100%" minHeight={150}>
+                              <LineChart data={dashboardHourlyChartData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} dy={10} />
+                                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                              표시할 시간대 통계가 없습니다.
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -689,14 +1516,28 @@ export default function App() {
                             <tr><th className="p-3 font-bold rounded-tl-lg">상태</th><th className="p-3 font-bold">사용자</th><th className="p-3 font-bold">시간</th><th className="p-3 font-bold rounded-tr-lg">이용시간</th></tr>
                           </thead>
                           <tbody>
-                            {sessionRows.slice(0, 5).map((s, i) => (
-                              <tr key={i} className="border-b border-slate-50 last:border-0">
-                                <td className="p-3"><div className={`w-2 h-2 rounded-full ${s.alerts === '정상' ? 'bg-emerald-500' : 'bg-red-500'}`}></div></td>
-                                <td className="p-3 font-bold text-slate-900">{s.user}</td>
-                                <td className="p-3 text-slate-500">{s.startTime}</td>
-                                <td className="p-3 text-slate-500">{s.duration}</td>
+                            {isRecentSessionsLoading ? (
+                              <tr>
+                                <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                                  최근 접속 세션을 불러오는 중입니다...
+                                </td>
                               </tr>
-                            ))}
+                            ) : sessionRows.length > 0 ? (
+                              sessionRows.slice(0, 5).map((s, i) => (
+                                <tr key={i} className="border-b border-slate-50 last:border-0">
+                                  <td className="p-3"><div className={`w-2 h-2 rounded-full ${s.alerts === '정상' ? 'bg-emerald-500' : 'bg-red-500'}`}></div></td>
+                                  <td className="p-3 font-bold text-slate-900">{s.user}</td>
+                                  <td className="p-3 text-slate-500">{s.startTime}</td>
+                                  <td className="p-3 text-slate-500">{s.duration}</td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                                  종료된 접속 세션이 없습니다.
+                                </td>
+                              </tr>
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -731,13 +1572,13 @@ export default function App() {
               <SummaryCard 
                 icon={BellRing} 
                 label="실시간 경고 (진행중)" 
-                value={realtimeSummary?.warningSessionCount.toString() ?? alertItems.filter(a => a.date === todayStr).length.toString()} 
+                value={realtimeSummary?.warningSessionCount.toString() ?? activeAlertCount.toString()} 
                 detail={`졸음 ${realtimeSummary?.drowsyWarningSessionCount ?? 0}건 / 수면 ${realtimeSummary?.sleepWarningSessionCount ?? 0}건`} 
               />
             </div>
 
             {(() => {
-              const activeAlerts = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline);
+              const activeAlerts = activeRealtimeAlerts;
               const activeUsers = riskUsersState.filter(u => u.isOnline);
               return (
                 <div className="flex flex-col xl:flex-row gap-6">
@@ -838,31 +1679,61 @@ export default function App() {
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input type="text" placeholder="이름 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
+                  <input type="text" placeholder="이름, 이메일 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
                 </div>
-                
+                <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 whitespace-nowrap">
+                  총 {organizationMembers.length}명
+                </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 text-slate-500">
-                    <tr><th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th><th className="p-4 font-bold border-b border-slate-100">상태</th><th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th></tr>
+                    <tr>
+                      <th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th>
+                      <th className="p-4 font-bold border-b border-slate-100">이메일</th>
+                      <th className="p-4 font-bold border-b border-slate-100">역할</th>
+                      <th className="p-4 font-bold border-b border-slate-100">가입일</th>
+                      <th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {riskUsersState.filter(u => u.name.includes(membersQuery)).map(u => (
-                      <tr key={u.name} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        <td className="p-4 font-bold text-slate-900">{u.name}</td>
-                        
-                        <td className="p-4">
-                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100">활성</span>
-                        </td>
-                        <td className="p-4">
-                          <button onClick={() => setSelectedUserForDetail(u.name)} className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 rounded-lg text-xs font-bold transition-colors shadow-sm">
-                            상세 정보
-                          </button>
+                    {isMembersLoading ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-500 font-bold">
+                          구성원 목록을 불러오는 중입니다...
                         </td>
                       </tr>
-                    ))}
+                    ) : filteredMembers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-500 font-bold">
+                          조회된 구성원이 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMembers.map((member) => (
+                        <tr key={member.memberId} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                          <td className="p-4 font-bold text-slate-900">{member.name ?? member.nickname ?? '-'}</td>
+                          <td className="p-4 text-slate-600">{member.email ?? '-'}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${member.role === 'ADMIN' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                              {formatMemberRole(member.role)}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-600 whitespace-nowrap">{formatMemberCreatedAt(member.createdAt)}</td>
+                          <td className="p-4">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(member)}
+                              disabled={removingMemberId === member.memberId}
+                              className="px-3 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {removingMemberId === member.memberId ? '삭제 중...' : '삭제'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -905,15 +1776,8 @@ export default function App() {
                     <tr><th className="p-4 font-bold border-b border-slate-100">일시</th><th className="p-4 font-bold border-b border-slate-100">사용자</th><th className="p-4 font-bold border-b border-slate-100">단계</th><th className="p-4 font-bold border-b border-slate-100">내용</th></tr>
                   </thead>
                   <tbody>
-                    {alertItems.filter(item => {
-                      const t = new Date(item.date).getTime()
-                      const start = new Date(alertFilterStartDate).getTime()
-                      const end = new Date(alertFilterEndDate).getTime()
-                      if (t < start || t > end) return false
-                      if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) return false
-                      return true
-                    }).map((item, i) => (
-                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                    {filteredAlertItems.map((item, i) => (
+                      <tr key={item.notificationId ?? `${item.user}-${item.date}-${item.time}-${i}`} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                         <td className="p-4 text-slate-600 whitespace-nowrap">{item.date} {item.time}</td>
                         <td className="p-4 font-bold text-slate-900">{item.user}</td>
                         
@@ -925,164 +1789,204 @@ export default function App() {
                         <td className="p-4 text-slate-600">{item.note}</td>
                       </tr>
                     ))}
+                    {isNotificationsLoading && (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                          알림 목록을 불러오는 중입니다...
+                        </td>
+                      </tr>
+                    )}
+                    {!isNotificationsLoading && filteredAlertItems.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                          조건에 맞는 알림이 없습니다.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
+              {(hasMoreNotifications || isLoadingMoreNotifications) && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreNotifications}
+                    disabled={isLoadingMoreNotifications}
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoadingMoreNotifications ? '불러오는 중...' : '이전 알림 더 보기'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {activeTab === 'statistics' && (() => {
-          const filtered = alertItems.filter(item => {
-            const t = new Date(item.date).getTime();
-            return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime());
-          })
-          const grouped = filtered.reduce((acc, item) => {
-            let key = ''
-            if (statType === 'hourly') { const h = parseInt(item.time.split(':')[0]); key = `${item.date} ${String(h).padStart(2, '0')}:00` }
-            else if (statType === 'daily') { key = item.date }
-            else if (statType === 'weekly') { key = getWeekOfMonthStr(item.date) }
-            else if (statType === 'monthly') { key = `${item.date.substring(0, 4)}-${item.date.substring(5, 7)}월` }
-            else if (statType === 'yearly') { key = `${item.date.substring(0, 4)}년` }
-            if (!acc[key]) acc[key] = { key, total: 0, l1: 0, l2: 0, items: [] }
-            acc[key].total++; if (item.level === 'L1') acc[key].l1++; if (item.level === 'L2') acc[key].l2++; acc[key].items.push(item); return acc
-          }, {} as Record<string, any>)
-          
-          const statResult = Object.values(grouped).sort((a: any, b: any) => a.key.localeCompare(b.key)); 
-          const chartData = statResult.map(r => ({
-            name: statType === 'hourly' ? r.key.split(' ')[1] : statType === 'monthly' ? r.key : r.key.split('-').pop(),
-            l1: r.l1,
-            l2: r.l2,
-            total: r.total
-          }))
-
-          const totalSessions = sessionRows.filter(s => { const t = new Date(s.date).getTime(); return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime()) }).length;
-          const totalAlerts = filtered.length;
-          const totalL1 = filtered.filter(a => a.level === 'L1').length;
-          const totalL2 = filtered.filter(a => a.level === 'L2').length;
-          const riskUsersStats = Object.entries(filtered.reduce((acc, a) => { acc[a.user] = (acc[a.user] || 0) + 1; return acc; }, {} as Record<string, number>)).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-          return (
-            <div className="flex flex-col gap-6">
-              <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">분석</h1>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
-                  {['hourly', 'daily', 'weekly', 'monthly', 'yearly'].map(type => (
-                    <button 
-                      key={type}
-                      type="button" 
-                      className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-all ${statType === type ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} 
-                      onClick={() => { 
-                        setStatType(type as any); 
-                        if(type==='yearly') {setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31')}
-                        else if(type==='monthly') {setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31')}
-                        else {setStatStartDate(weekAgoStr); setStatEndDate(todayStr)}
-                      }}>
-                      {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
-                    </button>
-                  ))}
-                  <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
-                  <input type="date" value={statStartDate} onChange={e => setStatStartDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
-                  <span className="text-slate-400">~</span>
-                  <input type="date" value={statEndDate} onChange={e => setStatEndDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
-                </div>
-              </header>
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">해당 기간 총 세션</p>
-                  <p className="text-3xl font-black text-slate-900 m-0">{totalSessions}</p>
-                </div>
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">졸음</p>
-                  <p className="text-3xl font-black text-amber-500 m-0">{totalL1}</p>
-                </div>
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">수면</p>
-                  <p className="text-3xl font-black text-red-500 m-0">{totalL2}</p>
-                </div>
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">전체 발생 알림</p>
-                  <p className="text-3xl font-black text-slate-900 m-0">{totalAlerts}</p>
-                </div>
+        {activeTab === 'statistics' && (
+          <div className="flex flex-col gap-6">
+            <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">분석</h1>
               </div>
+              <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                {['hourly', 'daily', 'weekly', 'monthly', 'yearly'].map(type => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-all ${statType === type ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => applyStatTypePreset(type as 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly')}
+                  >
+                    {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
+                  </button>
+                ))}
+                <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
+                <input type="date" value={statStartDate} onChange={e => setStatStartDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
+                <span className="text-slate-400">~</span>
+                <input type="date" value={statEndDate} onChange={e => setStatEndDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
+              </div>
+            </header>
 
-              {chartData.length > 0 ? (
-                <>
-                  <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-lg font-black text-slate-900 m-0">추이 분석 (Recharts)</h2>
-                      <div className="flex gap-4">
-                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">졸음</span></div>
-                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">수면</span></div>
-                      </div>
-                    </div>
-                    <div className="w-full h-[300px] min-h-[300px] min-w-0">
-                      <ResponsiveContainer width="99%" height={300}>
-                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
-                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
-                          <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                          <Line type="monotone" dataKey="l1" name="졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                          <Line type="monotone" dataKey="l2" name="수면" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </section>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {statStartDate > statEndDate ? (
+              <div className="p-8 text-center text-red-500 bg-white border border-red-100 rounded-2xl shadow-sm font-bold">
+                시작일은 종료일보다 이후일 수 없습니다.
+              </div>
+            ) : isOrganizationLoading ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                조직 정보를 불러오는 중입니다...
+              </div>
+            ) : !organizationId ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                조직 식별 정보를 확인할 수 없습니다.
+              </div>
+            ) : isAnalysisStatsLoading ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                분석 통계를 불러오는 중입니다...
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">해당 기간 총 세션</p>
+                    <p className="text-3xl font-black text-slate-900 m-0">{totalSessions}</p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">졸음</p>
+                    <p className="text-3xl font-black text-amber-500 m-0">{totalDrowsy}</p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">수면</p>
+                    <p className="text-3xl font-black text-red-500 m-0">{totalSleep}</p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">전체 발생 알림</p>
+                    <p className="text-3xl font-black text-slate-900 m-0">{totalRisk}</p>
+                  </div>
+                </div>
+
+                {analysisChartData.length > 0 ? (
+                  <>
                     <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                      <h2 className="text-lg font-black text-slate-900 m-0 mb-4">데이터 테이블</h2>
-                      <div className="overflow-x-auto rounded-xl border border-slate-100">
-                        <table className="w-full text-sm text-left">
-                          <thead className="bg-slate-50 text-slate-500">
-                            <tr><th className="p-3 font-bold border-b border-slate-100">기준</th><th className="p-3 font-bold border-b border-slate-100">총 알림</th><th className="p-3 font-bold border-b border-slate-100">졸음</th><th className="p-3 font-bold border-b border-slate-100">수면</th></tr>
-                          </thead>
-                          <tbody>
-                            {statResult.slice(0, 5).map((row: any) => (
-                              <tr key={row.key} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                                <td className="p-3 font-bold text-slate-700">{statType === 'hourly' ? row.key.split(' ')[1] : row.key}</td>
-                                <td className="p-3 font-black text-slate-900">{row.total}</td>
-                                <td className="p-3 text-amber-600 font-bold">{row.l1}</td>
-                                <td className="p-3 text-red-600 font-bold">{row.l2}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-lg font-black text-slate-900 m-0">추이 분석 (Recharts)</h2>
+                        <div className="flex gap-4">
+                          <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">졸음</span></div>
+                          <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">수면</span></div>
+                        </div>
+                      </div>
+                      <div className="w-full h-[300px] min-h-[300px] min-w-0">
+                        <ResponsiveContainer width="99%" height={300}>
+                          <LineChart data={analysisChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis
+                              dataKey="xKey"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
+                              dy={10}
+                              tickFormatter={(_value, index) => analysisChartData[index]?.label ?? ''}
+                            />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
+                            <Tooltip
+                              contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                              labelFormatter={(_value, payload) => {
+                                if (!payload || payload.length === 0) {
+                                  return '-'
+                                }
+                                return payload[0]?.payload?.label ?? '-'
+                              }}
+                            />
+                            <Line type="monotone" dataKey="l1" name="졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                            <Line type="monotone" dataKey="l2" name="수면" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
                       </div>
                     </section>
 
-                    <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                      <h2 className="text-lg font-black text-slate-900 m-0 mb-4">주의가 필요한 사용자 Top 5</h2>
-                      <div className="flex flex-col gap-3">
-                        {riskUsersStats.map(([name, count], index) => {
-                          return (
-                            <div key={name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                              <div className="flex items-center gap-3">
-                                <div className="grid w-8 h-8 place-items-center rounded-full bg-red-100 text-red-600 font-black text-sm">{index + 1}</div>
-                                <div>
-                                  <strong className="block text-sm font-bold text-slate-900">{name}</strong>
-                                  
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                        <h2 className="text-lg font-black text-slate-900 m-0 mb-4">데이터 테이블</h2>
+                        <div className="overflow-x-auto rounded-xl border border-slate-100">
+                          <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500">
+                              <tr>
+                                <th className="p-3 font-bold border-b border-slate-100">기준</th>
+                                <th className="p-3 font-bold border-b border-slate-100">세션</th>
+                                <th className="p-3 font-bold border-b border-slate-100">총 알림</th>
+                                <th className="p-3 font-bold border-b border-slate-100">졸음</th>
+                                <th className="p-3 font-bold border-b border-slate-100">수면</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {analysisSeries.slice(0, 10).map((row) => (
+                                <tr key={`${row.bucketStart}_${row.bucketEnd}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                  <td className="p-3 font-bold text-slate-700">{formatBucketLabel(row.bucketStart, row.bucketEnd, statType)}</td>
+                                  <td className="p-3 font-black text-slate-900">{row.sessionCount}</td>
+                                  <td className="p-3 font-black text-slate-900">{row.totalRiskCount}</td>
+                                  <td className="p-3 text-amber-600 font-bold">{row.drowsyCount}</td>
+                                  <td className="p-3 text-red-600 font-bold">{row.sleepCount}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+
+                      <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                        <h2 className="text-lg font-black text-slate-900 m-0 mb-4">주의가 필요한 사용자 Top 5</h2>
+                        {analysisTop5Members.length > 0 ? (
+                          <div className="flex flex-col gap-3">
+                            {analysisTop5Members.map((member, index) => (
+                              <div key={member.userId} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                  <div className="grid w-8 h-8 place-items-center rounded-full bg-red-100 text-red-600 font-black text-sm">{index + 1}</div>
+                                  <div>
+                                    <strong className="block text-sm font-bold text-slate-900">{member.name || `사용자 ${index + 1}`}</strong>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">알림</span>
+                                  <strong className="text-base font-black text-red-600 leading-none">{member.totalRiskCount}건</strong>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">알림</span>
-                                <strong className="text-base font-black text-red-600 leading-none">{count}건</strong>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </section>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-slate-400 font-bold bg-slate-50 border border-slate-100 rounded-xl">
+                            해당 기간 Top 5 데이터가 없습니다.
+                          </div>
+                        )}
+                      </section>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-12 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                    해당 조건에 맞는 데이터가 없습니다.
                   </div>
-                </>
-              ) : <div className="p-12 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">해당 조건에 맞는 데이터가 없습니다.</div>}
-            </div>
-          )
-        })()}
+                )}
+              </>
+            )}
+          </div>
+        )}
         
         {activeTab === 'account' && (
           <div className="flex flex-col gap-6">
@@ -1132,12 +2036,18 @@ export default function App() {
             </header>
             <div className="p-6">
               <p className="text-sm text-slate-500 mb-6">새로운 구성원의 이메일을 입력하세요.</p>
-              <form onSubmit={e => { e.preventDefault(); alert(`${email} 구성원이 추가되었습니다.`); setShowAddMember(false); setEmail(''); }} className="flex flex-col gap-4">
+              <form onSubmit={handleAddMember} className="flex flex-col gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">이메일</label>
                   <input type="email" placeholder="user@eyeon.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
                 </div>
-                <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">구성원 추가 완료</button>
+                <button
+                  type="submit"
+                  disabled={isAddingMember}
+                  className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform disabled:bg-slate-300 disabled:shadow-none disabled:transform-none"
+                >
+                  {isAddingMember ? '추가 중...' : '구성원 추가 완료'}
+                </button>
               </form>
             </div>
           </div>
