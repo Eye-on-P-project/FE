@@ -1,9 +1,11 @@
-import apiClient from './client'
+import apiClient, { API_BASE_URL } from './client'
 import type {
   MeResponse,
+  MonitoringEventResponse,
   MonitoringHourlyRisk24hResponse,
   OrganizationRecordResponse,
   OrganizationRiskStatsResponse,
+  RealtimeSummaryResponse,
   RiskStatsGranularity,
 } from '../types/api'
 
@@ -45,4 +47,119 @@ export const fetchOrganizationRiskStats = async (
     { params }
   )
   return response.data
+}
+
+type RealtimeSummarySseHandlers = {
+  accessToken: string
+  signal: AbortSignal
+  onSummary: (payload: RealtimeSummaryResponse) => void
+  onAlert?: (payload: MonitoringEventResponse) => void
+  onHeartbeat?: () => void
+}
+
+type ParsedSseMessage = {
+  event: string
+  data: string
+}
+
+const parseSseMessage = (rawMessage: string): ParsedSseMessage | null => {
+  const lines = rawMessage.split('\n')
+  let event = 'message'
+  const dataLines: string[] = []
+
+  for (const line of lines) {
+    if (!line || line.startsWith(':')) {
+      continue
+    }
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim()
+      continue
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart())
+    }
+  }
+
+  if (dataLines.length === 0) {
+    return null
+  }
+  return { event, data: dataLines.join('\n') }
+}
+
+export const streamRealtimeSummary = async ({
+  accessToken,
+  signal,
+  onSummary,
+  onAlert,
+  onHeartbeat,
+}: RealtimeSummarySseHandlers): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/api/monitoring/dashboard/realtime-summary/stream`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: {
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    signal,
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('SSE_UNAUTHORIZED')
+    }
+    throw new Error(`SSE_HTTP_${response.status}`)
+  }
+
+  if (!response.body) {
+    throw new Error('SSE_STREAM_UNAVAILABLE')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) {
+      return
+    }
+
+    buffer += decoder.decode(value, { stream: true }).replace(/\r/g, '')
+
+    let boundaryIndex = buffer.indexOf('\n\n')
+    while (boundaryIndex >= 0) {
+      const rawMessage = buffer.slice(0, boundaryIndex)
+      buffer = buffer.slice(boundaryIndex + 2)
+      boundaryIndex = buffer.indexOf('\n\n')
+
+      const parsed = parseSseMessage(rawMessage)
+      if (!parsed) {
+        continue
+      }
+
+      if (parsed.event === 'summary') {
+        try {
+          onSummary(JSON.parse(parsed.data) as RealtimeSummaryResponse)
+        } catch {
+          // ignore malformed payload
+        }
+        continue
+      }
+
+      if (parsed.event === 'alert') {
+        if (onAlert) {
+          try {
+            onAlert(JSON.parse(parsed.data) as MonitoringEventResponse)
+          } catch {
+            // ignore malformed payload
+          }
+        }
+        continue
+      }
+
+      if (parsed.event === 'heartbeat') {
+        onHeartbeat?.()
+      }
+    }
+  }
 }

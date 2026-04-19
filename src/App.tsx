@@ -35,15 +35,22 @@ import 'react-resizable/css/styles.css'
 import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
-import apiClient, { clearAccessToken, ensureWebSession, setAccessToken } from './api/client'
+import apiClient, { clearAccessToken, ensureWebSession, getAccessToken, setAccessToken } from './api/client'
+import {
+  addOrganizationMember,
+  fetchOrganizationMembers,
+  removeOrganizationMember,
+} from './api/members'
 import {
   fetchDashboardHourlyRisk24h,
   fetchMyOrganizationId,
   fetchOrganizationRiskStats,
+  streamRealtimeSummary,
 } from './api/monitoring'
 import type {
   LoginResponse,
   MonitoringHourlyRisk24hResponse,
+  OrganizationMemberResponse,
   OrganizationRiskStatsResponse,
   RealtimeSummaryResponse,
   RiskStatsGranularity,
@@ -248,6 +255,27 @@ function formatBucketLabel(
   return `${start.getFullYear()}`
 }
 
+function formatMemberRole(role: string | null | undefined) {
+  if (role === 'ADMIN') {
+    return '관리자'
+  }
+  if (role === 'USER') {
+    return '구성원'
+  }
+  return role ?? '미정'
+}
+
+function formatMemberCreatedAt(createdAt: string | null | undefined) {
+  if (!createdAt) {
+    return '-'
+  }
+  const parsed = new Date(createdAt)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return parsed.toLocaleString('ko-KR')
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAuthInitializing, setIsAuthInitializing] = useState(true)
@@ -412,6 +440,10 @@ export default function App() {
   const [isAnalysisStatsLoading, setIsAnalysisStatsLoading] = useState(false)
 
   const [membersQuery, setMembersQuery] = useState('')
+  const [organizationMembers, setOrganizationMembers] = useState<OrganizationMemberResponse[]>([])
+  const [isMembersLoading, setIsMembersLoading] = useState(false)
+  const [isAddingMember, setIsAddingMember] = useState(false)
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   
   const [email, setEmail] = useState('')
   
@@ -422,23 +454,87 @@ export default function App() {
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const [realtimeSummary, setRealtimeSummary] = useState<RealtimeSummaryResponse | null>(null)
+  const isRealtimeTab = activeTab === 'dashboard' || activeTab === 'live' || activeTab === 'alerts'
 
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || !isRealtimeTab) {
+      return
+    }
 
-    const fetchSummary = async () => {
-      try {
-        const response = await apiClient.get<RealtimeSummaryResponse>('/api/monitoring/dashboard/realtime-summary')
-        setRealtimeSummary(response.data)
-      } catch (error) {
-        console.error('Failed to fetch realtime summary:', error)
+    let isCancelled = false
+    let abortController: AbortController | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+    const waitBeforeRetry = (delayMs: number) =>
+      new Promise<void>((resolve) => {
+        retryTimer = setTimeout(resolve, delayMs)
+      })
+
+    const connect = async () => {
+      while (!isCancelled) {
+        try {
+          let accessToken = getAccessToken()
+          if (!accessToken) {
+            const refreshed = await ensureWebSession()
+            if (!refreshed || isCancelled) {
+              break
+            }
+            accessToken = getAccessToken()
+            if (!accessToken) {
+              break
+            }
+          }
+
+          abortController = new AbortController()
+          await streamRealtimeSummary({
+            accessToken,
+            signal: abortController.signal,
+            onSummary: (summary) => {
+              if (!isCancelled) {
+                setRealtimeSummary(summary)
+              }
+            },
+          })
+        } catch (error) {
+          const isAbortError = error instanceof DOMException && error.name === 'AbortError'
+          if (isAbortError || isCancelled) {
+            break
+          }
+
+          if (error instanceof Error && error.message === 'SSE_UNAUTHORIZED') {
+            const refreshed = await ensureWebSession()
+            if (!refreshed) {
+              clearAccessToken()
+              setRealtimeSummary(null)
+              setIsLoggedIn(false)
+              break
+            }
+          }
+        }
+
+        if (isCancelled) {
+          break
+        }
+        await waitBeforeRetry(1500)
       }
     }
 
-    fetchSummary()
-    const interval = setInterval(fetchSummary, 1000) // 1초마다 갱신
-    return () => clearInterval(interval)
-  }, [isLoggedIn])
+    const handlePageHide = () => {
+      abortController?.abort()
+    }
+
+    window.addEventListener('pagehide', handlePageHide)
+    connect()
+
+    return () => {
+      isCancelled = true
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+      }
+      abortController?.abort()
+      window.removeEventListener('pagehide', handlePageHide)
+    }
+  }, [isLoggedIn, isRealtimeTab])
 
   const handleExport = () => {
     const csvContent = "\uFEFFDate,Time,User,Level,Note\n"
@@ -459,6 +555,7 @@ export default function App() {
       setOrganizationId(null)
       setDashboardHourlyRisk(null)
       setAnalysisStats(null)
+      setOrganizationMembers([])
       return
     }
 
@@ -574,6 +671,39 @@ export default function App() {
     }
   }, [isLoggedIn, activeTab, organizationId, statType, statStartDate, statEndDate])
 
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'members') {
+      return
+    }
+
+    let isMounted = true
+
+    const loadMembers = async () => {
+      setIsMembersLoading(true)
+      try {
+        const response = await fetchOrganizationMembers()
+        if (isMounted) {
+          setOrganizationMembers(response)
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch organization members:', error)
+        if (isMounted) {
+          setOrganizationMembers([])
+          toast.error(extractApiErrorMessage(error, '구성원 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsMembersLoading(false)
+        }
+      }
+    }
+
+    loadMembers()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn, activeTab])
+
   const dashboardHourlyChartData = (dashboardHourlyRisk?.buckets ?? []).map((bucket) => ({
     label: formatHourLabel(bucket.bucketStart),
     value: bucket.totalRiskCount,
@@ -628,6 +758,61 @@ export default function App() {
 
     setStatStartDate(toInputDateString(getDateBefore(today, 365 * 2)))
     setStatEndDate(end)
+  }
+
+  const normalizedMembersQuery = membersQuery.trim().toLowerCase()
+  const filteredMembers = organizationMembers.filter((member) => {
+    if (!normalizedMembersQuery) {
+      return true
+    }
+    const keywords = [member.name, member.email, member.nickname]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.toLowerCase())
+    return keywords.some((value) => value.includes(normalizedMembersQuery))
+  })
+
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail) {
+      return
+    }
+
+    setIsAddingMember(true)
+    try {
+      const createdMember = await addOrganizationMember(normalizedEmail)
+      setOrganizationMembers((prev) => [
+        createdMember,
+        ...prev.filter((member) => member.memberId !== createdMember.memberId),
+      ])
+      toast.success('구성원을 추가했습니다.')
+      setShowAddMember(false)
+      setEmail('')
+    } catch (error: unknown) {
+      console.error('Failed to add organization member:', error)
+      toast.error(extractApiErrorMessage(error, '구성원 추가에 실패했습니다.'))
+    } finally {
+      setIsAddingMember(false)
+    }
+  }
+
+  const handleRemoveMember = async (member: OrganizationMemberResponse) => {
+    const memberName = member.name ?? member.email ?? member.userId
+    if (!confirm(`정말 ${memberName} 구성원을 삭제하시겠습니까?`)) {
+      return
+    }
+
+    setRemovingMemberId(member.memberId)
+    try {
+      await removeOrganizationMember(member.memberId)
+      setOrganizationMembers((prev) => prev.filter((item) => item.memberId !== member.memberId))
+      toast.success('구성원을 삭제했습니다.')
+    } catch (error: unknown) {
+      console.error('Failed to remove organization member:', error)
+      toast.error(extractApiErrorMessage(error, '구성원 삭제에 실패했습니다.'))
+    } finally {
+      setRemovingMemberId(null)
+    }
   }
 
   if (isAuthInitializing) {
@@ -1080,31 +1265,61 @@ export default function App() {
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input type="text" placeholder="이름 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
+                  <input type="text" placeholder="이름, 이메일 검색" value={membersQuery} onChange={e => setMembersQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm font-medium" />
                 </div>
-                
+                <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 whitespace-nowrap">
+                  총 {organizationMembers.length}명
+                </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 text-slate-500">
-                    <tr><th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th><th className="p-4 font-bold border-b border-slate-100">상태</th><th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th></tr>
+                    <tr>
+                      <th className="p-4 font-bold border-b border-slate-100 rounded-tl-xl">이름</th>
+                      <th className="p-4 font-bold border-b border-slate-100">이메일</th>
+                      <th className="p-4 font-bold border-b border-slate-100">역할</th>
+                      <th className="p-4 font-bold border-b border-slate-100">가입일</th>
+                      <th className="p-4 font-bold border-b border-slate-100 rounded-tr-xl">관리</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {riskUsersState.filter(u => u.name.includes(membersQuery)).map(u => (
-                      <tr key={u.name} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        <td className="p-4 font-bold text-slate-900">{u.name}</td>
-                        
-                        <td className="p-4">
-                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100">활성</span>
-                        </td>
-                        <td className="p-4">
-                          <button onClick={() => setSelectedUserForDetail(u.name)} className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 rounded-lg text-xs font-bold transition-colors shadow-sm">
-                            상세 정보
-                          </button>
+                    {isMembersLoading ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-500 font-bold">
+                          구성원 목록을 불러오는 중입니다...
                         </td>
                       </tr>
-                    ))}
+                    ) : filteredMembers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-500 font-bold">
+                          조회된 구성원이 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMembers.map((member) => (
+                        <tr key={member.memberId} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                          <td className="p-4 font-bold text-slate-900">{member.name ?? member.nickname ?? '-'}</td>
+                          <td className="p-4 text-slate-600">{member.email ?? '-'}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${member.role === 'ADMIN' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                              {formatMemberRole(member.role)}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-600 whitespace-nowrap">{formatMemberCreatedAt(member.createdAt)}</td>
+                          <td className="p-4">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(member)}
+                              disabled={removingMemberId === member.memberId}
+                              className="px-3 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {removingMemberId === member.memberId ? '삭제 중...' : '삭제'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1373,12 +1588,18 @@ export default function App() {
             </header>
             <div className="p-6">
               <p className="text-sm text-slate-500 mb-6">새로운 구성원의 이메일을 입력하세요.</p>
-              <form onSubmit={e => { e.preventDefault(); alert(`${email} 구성원이 추가되었습니다.`); setShowAddMember(false); setEmail(''); }} className="flex flex-col gap-4">
+              <form onSubmit={handleAddMember} className="flex flex-col gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">이메일</label>
                   <input type="email" placeholder="user@eyeon.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
                 </div>
-                <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform">구성원 추가 완료</button>
+                <button
+                  type="submit"
+                  disabled={isAddingMember}
+                  className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-transform disabled:bg-slate-300 disabled:shadow-none disabled:transform-none"
+                >
+                  {isAddingMember ? '추가 중...' : '구성원 추가 완료'}
+                </button>
               </form>
             </div>
           </div>

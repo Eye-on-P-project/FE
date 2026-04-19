@@ -26,6 +26,18 @@ export interface RealtimeSummaryResponse {
   sleepWarningSessionCount: number;
 }
 
+export type MonitoringEventType = 'NORMAL' | 'DROWSY' | 'SLEEP';
+
+export interface MonitoringEventResponse {
+  eventId: string;
+  sessionId: string;
+  eventType: MonitoringEventType;
+  occurredAtApp: string;
+  occurredAtServer: string;
+  drowsyCount: number;
+  sleepCount: number;
+}
+
 export interface OrganizationRecordResponse {
   id: string;
   code: string;
@@ -68,4 +80,17 @@ export interface OrganizationRiskStatsResponse {
   to: string;
   series: OrganizationRiskStatsBucket[];
   top5Members: OrganizationRiskTopMember[];
+}
+
+export type UserRole = 'ADMIN' | 'USER';
+
+export interface OrganizationMemberResponse {
+  memberId: string;
+  organizationId: string;
+  userId: string;
+  email: string | null;
+  name: string | null;
+  nickname: string | null;
+  role: UserRole | null;
+  createdAt: string;
 }
