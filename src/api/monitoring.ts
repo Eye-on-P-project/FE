@@ -1,10 +1,13 @@
 import apiClient, { API_BASE_URL } from './client'
 import type {
   MeResponse,
-  MonitoringEventResponse,
   MonitoringHourlyRisk24hResponse,
+  MonitoringNotificationPageResponse,
+  MonitoringNotificationResponse,
+  MonitoringRecentEndedSessionResponse,
   OrganizationRecordResponse,
   OrganizationRiskStatsResponse,
+  OrganizationRiskUserResponse,
   RealtimeSummaryResponse,
   RiskStatsGranularity,
 } from '../types/api'
@@ -49,11 +52,40 @@ export const fetchOrganizationRiskStats = async (
   return response.data
 }
 
+export const fetchOrganizationRiskUsers = async (
+  organizationId: string
+): Promise<OrganizationRiskUserResponse[]> => {
+  const response = await apiClient.get<OrganizationRiskUserResponse[]>(
+    `/api/organizations/${organizationId}/risk-users`
+  )
+  return response.data
+}
+
+export const fetchDashboardRecentEndedSessions = async (
+  limit = 20
+): Promise<MonitoringRecentEndedSessionResponse[]> => {
+  const response = await apiClient.get<MonitoringRecentEndedSessionResponse[]>(
+    '/api/monitoring/dashboard/recent-ended-sessions',
+    { params: { limit } }
+  )
+  return response.data
+}
+
+export const fetchDashboardNotifications = async (
+  params?: { limit?: number; cursor?: string | null }
+): Promise<MonitoringNotificationPageResponse> => {
+  const response = await apiClient.get<MonitoringNotificationPageResponse>(
+    '/api/monitoring/dashboard/notifications',
+    { params }
+  )
+  return response.data
+}
+
 type RealtimeSummarySseHandlers = {
   accessToken: string
   signal: AbortSignal
   onSummary: (payload: RealtimeSummaryResponse) => void
-  onAlert?: (payload: MonitoringEventResponse) => void
+  onAlert?: (payload: MonitoringNotificationResponse) => void
   onHeartbeat?: () => void
 }
 
@@ -149,7 +181,7 @@ export const streamRealtimeSummary = async ({
       if (parsed.event === 'alert') {
         if (onAlert) {
           try {
-            onAlert(JSON.parse(parsed.data) as MonitoringEventResponse)
+            onAlert(JSON.parse(parsed.data) as MonitoringNotificationResponse)
           } catch {
             // ignore malformed payload
           }

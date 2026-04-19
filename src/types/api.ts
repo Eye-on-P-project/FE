@@ -27,6 +27,7 @@ export interface RealtimeSummaryResponse {
 }
 
 export type MonitoringEventType = 'NORMAL' | 'DROWSY' | 'SLEEP';
+export type NotificationType = 'DROWSY' | 'SLEEP';
 
 export interface MonitoringEventResponse {
   eventId: string;
@@ -36,6 +37,22 @@ export interface MonitoringEventResponse {
   occurredAtServer: string;
   drowsyCount: number;
   sleepCount: number;
+}
+
+export interface MonitoringNotificationResponse {
+  notificationId: string;
+  userId: string;
+  targetUserId: string;
+  userName: string;
+  type: NotificationType;
+  content: string;
+  occurredAt: string;
+}
+
+export interface MonitoringNotificationPageResponse {
+  items: MonitoringNotificationResponse[];
+  nextCursor: string | null;
+  hasNext: boolean;
 }
 
 export interface OrganizationRecordResponse {
@@ -80,6 +97,29 @@ export interface OrganizationRiskStatsResponse {
   to: string;
   series: OrganizationRiskStatsBucket[];
   top5Members: OrganizationRiskTopMember[];
+}
+
+export interface OrganizationRiskUserResponse {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  nickname: string | null;
+  totalSessionCount: number;
+  drowsyCount: number;
+  sleepCount: number;
+  totalRiskCount: number;
+}
+
+export interface MonitoringRecentEndedSessionResponse {
+  sessionId: string;
+  userId: string;
+  userName: string | null;
+  startedAtApp: string;
+  endedAtApp: string | null;
+  durationMinutes: number;
+  drowsyCount: number;
+  sleepCount: number;
+  totalRiskCount: number;
 }
 
 export type UserRole = 'ADMIN' | 'USER';

@@ -42,16 +42,22 @@ import {
   removeOrganizationMember,
 } from './api/members'
 import {
+  fetchDashboardNotifications,
   fetchDashboardHourlyRisk24h,
+  fetchDashboardRecentEndedSessions,
   fetchMyOrganizationId,
   fetchOrganizationRiskStats,
+  fetchOrganizationRiskUsers,
   streamRealtimeSummary,
 } from './api/monitoring'
 import type {
   LoginResponse,
   MonitoringHourlyRisk24hResponse,
+  MonitoringNotificationResponse,
+  MonitoringRecentEndedSessionResponse,
   OrganizationMemberResponse,
   OrganizationRiskStatsResponse,
+  OrganizationRiskUserResponse,
   RealtimeSummaryResponse,
   RiskStatsGranularity,
 } from './types/api'
@@ -62,8 +68,7 @@ import {
   widgetMeta,
   defaultLayouts,
   initialRiskUsers,
-  alertItems,
-  sessionRows,
+  sessionRows as initialSessionRows,
   todayStr,
   weekAgoStr
 } from './data/mockData'
@@ -73,6 +78,9 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
+const ALERT_ACTIVE_WINDOW_MS = 5 * 60 * 1000
+const NOTIFICATION_PAGE_SIZE = 50
+const MAX_ALERT_ITEMS = 500
 
 function SummaryCard({ icon: Icon, label, value, detail }: { icon: any, label: string, value: string, detail: string }) {
   return (
@@ -276,6 +284,110 @@ function formatMemberCreatedAt(createdAt: string | null | undefined) {
   return parsed.toLocaleString('ko-KR')
 }
 
+function formatSessionDate(dateTime: string) {
+  const parsed = new Date(dateTime)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+}
+
+function formatSessionTime(dateTime: string) {
+  const parsed = new Date(dateTime)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
+}
+
+function formatSessionDuration(durationMinutes: number | null | undefined) {
+  const totalMinutes = Math.max(0, Number(durationMinutes ?? 0))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${minutes}m`
+}
+
+function formatSessionAlerts(drowsyCount: number, sleepCount: number) {
+  const alerts: string[] = []
+  if (drowsyCount > 0) {
+    alerts.push(`졸음 ${drowsyCount}회`)
+  }
+  if (sleepCount > 0) {
+    alerts.push(`수면 ${sleepCount}회`)
+  }
+  return alerts.length > 0 ? alerts.join(' / ') : '정상'
+}
+
+function mapRiskUsersResponseToWidgetRows(response: OrganizationRiskUserResponse[]): RiskUser[] {
+  return response.map((row) => {
+    const resolvedName = row.name?.trim() || row.nickname?.trim() || row.email?.trim() || `사용자 ${row.userId}`
+    return {
+      name: resolvedName,
+      alertCount: row.totalRiskCount,
+      sessionsToday: row.totalSessionCount,
+      isOnline: true,
+    }
+  })
+}
+
+function mapRecentEndedSessionsToRows(response: MonitoringRecentEndedSessionResponse[]): SessionRow[] {
+  return response.map((row) => ({
+    user: row.userName?.trim() || `사용자 ${row.userId}`,
+    date: formatSessionDate(row.startedAtApp),
+    startTime: formatSessionTime(row.startedAtApp),
+    duration: formatSessionDuration(row.durationMinutes),
+    alerts: formatSessionAlerts(row.drowsyCount, row.sleepCount),
+  }))
+}
+
+function mapNotificationToAlertItem(notification: MonitoringNotificationResponse): AlertItem {
+  return {
+    notificationId: notification.notificationId,
+    userId: notification.userId,
+    user: notification.userName?.trim() || `사용자 ${notification.userId}`,
+    level: notification.type === 'SLEEP' ? 'L2' : 'L1',
+    date: formatSessionDate(notification.occurredAt),
+    time: formatSessionTime(notification.occurredAt),
+    note: notification.content,
+    occurredAt: notification.occurredAt,
+    status: '종료됨',
+  }
+}
+
+function getAlertTimestamp(item: AlertItem): number {
+  if (item.occurredAt) {
+    const occurredAtTime = new Date(item.occurredAt).getTime()
+    if (!Number.isNaN(occurredAtTime)) {
+      return occurredAtTime
+    }
+  }
+  const fallbackTime = new Date(`${item.date}T${item.time}:00`).getTime()
+  return Number.isNaN(fallbackTime) ? 0 : fallbackTime
+}
+
+function isAlertActive(item: AlertItem, nowTime: number): boolean {
+  const occurredAtTime = getAlertTimestamp(item)
+  if (occurredAtTime <= 0) {
+    return item.status === '진행중'
+  }
+  return nowTime - occurredAtTime <= ALERT_ACTIVE_WINDOW_MS
+}
+
+function mergeAlertItems(previous: AlertItem[], incoming: AlertItem[]): AlertItem[] {
+  const mergedMap = new Map<string, AlertItem>()
+  const put = (item: AlertItem) => {
+    const key = item.notificationId ?? `${item.user}|${item.level}|${item.date}|${item.time}|${item.note}`
+    mergedMap.set(key, item)
+  }
+
+  previous.forEach(put)
+  incoming.forEach(put)
+
+  return Array.from(mergedMap.values())
+    .sort((a, b) => getAlertTimestamp(b) - getAlertTimestamp(a))
+    .slice(0, MAX_ALERT_ITEMS)
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAuthInitializing, setIsAuthInitializing] = useState(true)
@@ -424,6 +536,14 @@ export default function App() {
   }
 
   const [riskUsersState, setRiskUsersState] = useState<RiskUser[]>(initialRiskUsers)
+  const [isRiskUsersLoading, setIsRiskUsersLoading] = useState(false)
+  const [alertItems, setAlertItems] = useState<AlertItem[]>([])
+  const [notificationsNextCursor, setNotificationsNextCursor] = useState<string | null>(null)
+  const [hasMoreNotifications, setHasMoreNotifications] = useState(false)
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false)
+  const [isLoadingMoreNotifications, setIsLoadingMoreNotifications] = useState(false)
+  const [sessionRows, setSessionRows] = useState<SessionRow[]>(initialSessionRows)
+  const [isRecentSessionsLoading, setIsRecentSessionsLoading] = useState(false)
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({})
 
@@ -494,6 +614,13 @@ export default function App() {
                 setRealtimeSummary(summary)
               }
             },
+            onAlert: (notification) => {
+              if (isCancelled) {
+                return
+              }
+              const nextAlert = mapNotificationToAlertItem(notification)
+              setAlertItems((prev) => mergeAlertItems(prev, [nextAlert]))
+            },
           })
         } catch (error) {
           const isAbortError = error instanceof DOMException && error.name === 'AbortError'
@@ -536,6 +663,101 @@ export default function App() {
     }
   }, [isLoggedIn, isRealtimeTab])
 
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setAlertItems([])
+      setNotificationsNextCursor(null)
+      setHasMoreNotifications(false)
+      return
+    }
+
+    let isMounted = true
+
+    const loadInitialNotifications = async () => {
+      setIsNotificationsLoading(true)
+      try {
+        const page = await fetchDashboardNotifications({ limit: NOTIFICATION_PAGE_SIZE })
+        if (!isMounted) {
+          return
+        }
+        const mapped = page.items.map(mapNotificationToAlertItem)
+        setAlertItems((prev) => mergeAlertItems(prev, mapped))
+        setNotificationsNextCursor(page.nextCursor)
+        setHasMoreNotifications(page.hasNext)
+      } catch (error: unknown) {
+        if (isMounted) {
+          toast.error(extractApiErrorMessage(error, '알림 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsNotificationsLoading(false)
+        }
+      }
+    }
+
+    loadInitialNotifications()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'alerts') {
+      return
+    }
+
+    let isMounted = true
+
+    const refreshNotificationsOnAlertsTab = async () => {
+      setIsNotificationsLoading(true)
+      try {
+        const page = await fetchDashboardNotifications({ limit: NOTIFICATION_PAGE_SIZE })
+        if (!isMounted) {
+          return
+        }
+        const mapped = page.items.map(mapNotificationToAlertItem)
+        setAlertItems((prev) => mergeAlertItems(prev, mapped))
+        setNotificationsNextCursor(page.nextCursor)
+        setHasMoreNotifications(page.hasNext)
+      } catch (error: unknown) {
+        if (isMounted) {
+          toast.error(extractApiErrorMessage(error, '알림 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsNotificationsLoading(false)
+        }
+      }
+    }
+
+    refreshNotificationsOnAlertsTab()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn, activeTab])
+
+  const handleLoadMoreNotifications = async () => {
+    if (!notificationsNextCursor || isLoadingMoreNotifications) {
+      return
+    }
+
+    setIsLoadingMoreNotifications(true)
+    try {
+      const page = await fetchDashboardNotifications({
+        limit: NOTIFICATION_PAGE_SIZE,
+        cursor: notificationsNextCursor,
+      })
+      const mapped = page.items.map(mapNotificationToAlertItem)
+      setAlertItems((prev) => mergeAlertItems(prev, mapped))
+      setNotificationsNextCursor(page.nextCursor)
+      setHasMoreNotifications(page.hasNext)
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '추가 알림을 불러오지 못했습니다.'))
+    } finally {
+      setIsLoadingMoreNotifications(false)
+    }
+  }
+
   const handleExport = () => {
     const csvContent = "\uFEFFDate,Time,User,Level,Note\n"
       + alertItems.map(a => `${a.date},${a.time},${a.user},${a.level},${a.note}`).join("\n");
@@ -556,6 +778,11 @@ export default function App() {
       setDashboardHourlyRisk(null)
       setAnalysisStats(null)
       setOrganizationMembers([])
+      setRiskUsersState(initialRiskUsers)
+      setAlertItems([])
+      setNotificationsNextCursor(null)
+      setHasMoreNotifications(false)
+      setSessionRows(initialSessionRows)
       return
     }
 
@@ -618,6 +845,86 @@ export default function App() {
     loadDashboardHourlyRisk()
     if (activeTab === 'dashboard') {
       intervalId = setInterval(loadDashboardHourlyRisk, 60000)
+    }
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isLoggedIn, activeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn || !organizationId) {
+      return
+    }
+
+    let isMounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const loadRiskUsers = async () => {
+      setIsRiskUsersLoading(true)
+      try {
+        const response = await fetchOrganizationRiskUsers(organizationId)
+        if (isMounted) {
+          setRiskUsersState(mapRiskUsersResponseToWidgetRows(response))
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch organization risk users:', error)
+        if (isMounted && (activeTab === 'dashboard' || activeTab === 'live')) {
+          toast.error(extractApiErrorMessage(error, '위험 사용자 목록을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsRiskUsersLoading(false)
+        }
+      }
+    }
+
+    loadRiskUsers()
+    if (activeTab === 'dashboard') {
+      intervalId = setInterval(loadRiskUsers, 60000)
+    }
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isLoggedIn, organizationId, activeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return
+    }
+
+    let isMounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const loadRecentEndedSessions = async () => {
+      setIsRecentSessionsLoading(true)
+      try {
+        const response = await fetchDashboardRecentEndedSessions(50)
+        if (isMounted) {
+          setSessionRows(mapRecentEndedSessionsToRows(response))
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch recent ended sessions:', error)
+        if (isMounted && (activeTab === 'dashboard' || activeTab === 'live')) {
+          toast.error(extractApiErrorMessage(error, '최근 접속 세션을 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsRecentSessionsLoading(false)
+        }
+      }
+    }
+
+    loadRecentEndedSessions()
+    if (activeTab === 'dashboard') {
+      intervalId = setInterval(loadRecentEndedSessions, 60000)
     }
 
     return () => {
@@ -769,6 +1076,25 @@ export default function App() {
       .filter((value): value is string => Boolean(value))
       .map((value) => value.toLowerCase())
     return keywords.some((value) => value.includes(normalizedMembersQuery))
+  })
+
+  const nowTime = currentTime.getTime()
+  const activeRealtimeAlerts = alertItems.filter((item) => isAlertActive(item, nowTime))
+  const activeAlertCount = activeRealtimeAlerts.length
+  const activeL1AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L1').length
+  const activeL2AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L2').length
+  const filteredAlertItems = alertItems.filter((item) => {
+    const occurredAt = new Date(item.date).getTime()
+    const start = new Date(alertFilterStartDate).getTime()
+    const end = new Date(alertFilterEndDate).getTime()
+
+    if (Number.isNaN(occurredAt) || occurredAt < start || occurredAt > end) {
+      return false
+    }
+    if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) {
+      return false
+    }
+    return true
   })
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -956,9 +1282,9 @@ export default function App() {
               </div>
 
               {(() => {
-                const alertCount = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
-                const l1Count = realtimeSummary?.drowsyWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L1').length;
-                const l2Count = realtimeSummary?.sleepWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L2').length;
+                const alertCount = realtimeSummary?.warningSessionCount ?? activeAlertCount;
+                const l1Count = realtimeSummary?.drowsyWarningSessionCount ?? activeL1AlertCount;
+                const l2Count = realtimeSummary?.sleepWarningSessionCount ?? activeL2AlertCount;
                 const hasAlerts = alertCount > 0;
                 
                 return (
@@ -1026,7 +1352,7 @@ export default function App() {
                     {id === 'activeUsers' && (() => {
                       const total = realtimeSummary?.totalMemberCount ?? riskUsersState.length;
                       const active = realtimeSummary?.activeSessionCount ?? riskUsersState.filter(u => u.isOnline).length;
-                      const alerting = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                      const alerting = realtimeSummary?.warningSessionCount ?? activeAlertCount;
                       return (
                         <div className="flex flex-col h-full justify-between gap-4">
                           <div className="flex-1 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-center">
@@ -1046,27 +1372,36 @@ export default function App() {
                     })()}
                     {id === 'riskUsers' && (
                       <div className="flex flex-col gap-2">
-                        {riskUsersState.slice(0, 5).map(u => (
-                          <button key={u.name} onClick={() => setSelectedUserForDetail(u.name)} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all text-left w-full">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-2 h-2 rounded-full ${u.alertCount >= 5 ? 'bg-red-500' : u.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                              <div>
-                                <strong className="block text-sm font-bold text-slate-900 leading-none mb-1">{u.name}</strong>
-                                
+                        {isRiskUsersLoading ? (
+                          <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                            위험 사용자 정보를 불러오는 중...
+                          </div>
+                        ) : riskUsersState.length > 0 ? (
+                          riskUsersState.slice(0, 5).map(u => (
+                            <button key={u.name} onClick={() => setSelectedUserForDetail(u.name)} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-all text-left w-full">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-2 h-2 rounded-full ${u.alertCount >= 5 ? 'bg-red-500' : u.alertCount >= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                <div>
+                                  <strong className="block text-sm font-bold text-slate-900 leading-none mb-1">{u.name}</strong>
+                                </div>
                               </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Alerts</span>
-                              <strong className={`text-sm font-black ${u.alertCount > 0 ? 'text-red-500' : 'text-slate-500'}`}>{u.alertCount}</strong>
-                            </div>
-                          </button>
-                        ))}
+                              <div className="text-right">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Alerts</span>
+                                <strong className={`text-sm font-black ${u.alertCount > 0 ? 'text-red-500' : 'text-slate-500'}`}>{u.alertCount}</strong>
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                            조회된 위험 사용자가 없습니다.
+                          </div>
+                        )}
                       </div>
                     )}
                     {id === 'alertFeed' && (
                       <div className="flex flex-col gap-3">
-                        {alertItems.slice(0, 4).map((a, i) => (
-                          <div key={i} className="p-3 border border-slate-100 rounded-xl bg-white shadow-sm">
+                        {alertItems.length > 0 ? alertItems.slice(0, 4).map((a, i) => (
+                          <div key={a.notificationId ?? `${a.user}-${a.date}-${a.time}-${i}`} className="p-3 border border-slate-100 rounded-xl bg-white shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider ${a.level === 'L1' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
@@ -1078,7 +1413,11 @@ export default function App() {
                             </div>
                             <p className="m-0 text-sm text-slate-600">{a.note}</p>
                           </div>
-                        ))}
+                        )) : (
+                          <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                            최근 알림이 없습니다.
+                          </div>
+                        )}
                       </div>
                     )}
                     {id === 'hourlyTrend' && (
@@ -1116,14 +1455,28 @@ export default function App() {
                             <tr><th className="p-3 font-bold rounded-tl-lg">상태</th><th className="p-3 font-bold">사용자</th><th className="p-3 font-bold">시간</th><th className="p-3 font-bold rounded-tr-lg">이용시간</th></tr>
                           </thead>
                           <tbody>
-                            {sessionRows.slice(0, 5).map((s, i) => (
-                              <tr key={i} className="border-b border-slate-50 last:border-0">
-                                <td className="p-3"><div className={`w-2 h-2 rounded-full ${s.alerts === '정상' ? 'bg-emerald-500' : 'bg-red-500'}`}></div></td>
-                                <td className="p-3 font-bold text-slate-900">{s.user}</td>
-                                <td className="p-3 text-slate-500">{s.startTime}</td>
-                                <td className="p-3 text-slate-500">{s.duration}</td>
+                            {isRecentSessionsLoading ? (
+                              <tr>
+                                <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                                  최근 접속 세션을 불러오는 중입니다...
+                                </td>
                               </tr>
-                            ))}
+                            ) : sessionRows.length > 0 ? (
+                              sessionRows.slice(0, 5).map((s, i) => (
+                                <tr key={i} className="border-b border-slate-50 last:border-0">
+                                  <td className="p-3"><div className={`w-2 h-2 rounded-full ${s.alerts === '정상' ? 'bg-emerald-500' : 'bg-red-500'}`}></div></td>
+                                  <td className="p-3 font-bold text-slate-900">{s.user}</td>
+                                  <td className="p-3 text-slate-500">{s.startTime}</td>
+                                  <td className="p-3 text-slate-500">{s.duration}</td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                                  종료된 접속 세션이 없습니다.
+                                </td>
+                              </tr>
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -1158,13 +1511,13 @@ export default function App() {
               <SummaryCard 
                 icon={BellRing} 
                 label="실시간 경고 (진행중)" 
-                value={realtimeSummary?.warningSessionCount.toString() ?? alertItems.filter(a => a.date === todayStr).length.toString()} 
+                value={realtimeSummary?.warningSessionCount.toString() ?? activeAlertCount.toString()} 
                 detail={`졸음 ${realtimeSummary?.drowsyWarningSessionCount ?? 0}건 / 수면 ${realtimeSummary?.sleepWarningSessionCount ?? 0}건`} 
               />
             </div>
 
             {(() => {
-              const activeAlerts = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline);
+              const activeAlerts = activeRealtimeAlerts;
               const activeUsers = riskUsersState.filter(u => u.isOnline);
               return (
                 <div className="flex flex-col xl:flex-row gap-6">
@@ -1362,15 +1715,8 @@ export default function App() {
                     <tr><th className="p-4 font-bold border-b border-slate-100">일시</th><th className="p-4 font-bold border-b border-slate-100">사용자</th><th className="p-4 font-bold border-b border-slate-100">단계</th><th className="p-4 font-bold border-b border-slate-100">내용</th></tr>
                   </thead>
                   <tbody>
-                    {alertItems.filter(item => {
-                      const t = new Date(item.date).getTime()
-                      const start = new Date(alertFilterStartDate).getTime()
-                      const end = new Date(alertFilterEndDate).getTime()
-                      if (t < start || t > end) return false
-                      if (alertFilterLevel !== 'all' && item.level !== alertFilterLevel) return false
-                      return true
-                    }).map((item, i) => (
-                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                    {filteredAlertItems.map((item, i) => (
+                      <tr key={item.notificationId ?? `${item.user}-${item.date}-${item.time}-${i}`} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                         <td className="p-4 text-slate-600 whitespace-nowrap">{item.date} {item.time}</td>
                         <td className="p-4 font-bold text-slate-900">{item.user}</td>
                         
@@ -1382,9 +1728,35 @@ export default function App() {
                         <td className="p-4 text-slate-600">{item.note}</td>
                       </tr>
                     ))}
+                    {isNotificationsLoading && (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                          알림 목록을 불러오는 중입니다...
+                        </td>
+                      </tr>
+                    )}
+                    {!isNotificationsLoading && filteredAlertItems.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-slate-500 font-bold">
+                          조건에 맞는 알림이 없습니다.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
+              {(hasMoreNotifications || isLoadingMoreNotifications) && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreNotifications}
+                    disabled={isLoadingMoreNotifications}
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoadingMoreNotifications ? '불러오는 중...' : '이전 알림 더 보기'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

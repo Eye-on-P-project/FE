@@ -14,11 +14,14 @@ export type NavigationItem = {
 }
 
 export type AlertItem = {
+  notificationId?: string
+  userId?: string
   user: string
   level: 'L1' | 'L2'
   date: string
   time: string
   note: string
+  occurredAt?: string
   status: '진행중' | '종료됨'
 }
 
