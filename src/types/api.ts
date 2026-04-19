@@ -25,3 +25,47 @@ export interface RealtimeSummaryResponse {
   drowsyWarningSessionCount: number;
   sleepWarningSessionCount: number;
 }
+
+export interface OrganizationRecordResponse {
+  id: string;
+  code: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface MonitoringHourlyRiskBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  totalRiskCount: number;
+}
+
+export interface MonitoringHourlyRisk24hResponse {
+  rangeStart: string;
+  rangeEnd: string;
+  buckets: MonitoringHourlyRiskBucket[];
+}
+
+export type RiskStatsGranularity = 'HOUR' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+
+export interface OrganizationRiskStatsBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  sessionCount: number;
+  drowsyCount: number;
+  sleepCount: number;
+  totalRiskCount: number;
+}
+
+export interface OrganizationRiskTopMember {
+  userId: string;
+  name: string;
+  totalRiskCount: number;
+}
+
+export interface OrganizationRiskStatsResponse {
+  granularity: RiskStatsGranularity;
+  from: string;
+  to: string;
+  series: OrganizationRiskStatsBucket[];
+  top5Members: OrganizationRiskTopMember[];
+}

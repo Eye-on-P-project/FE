@@ -36,7 +36,18 @@ import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
 import apiClient, { clearAccessToken, ensureWebSession, setAccessToken } from './api/client'
-import type { LoginResponse, RealtimeSummaryResponse } from './types/api'
+import {
+  fetchDashboardHourlyRisk24h,
+  fetchMyOrganizationId,
+  fetchOrganizationRiskStats,
+} from './api/monitoring'
+import type {
+  LoginResponse,
+  MonitoringHourlyRisk24hResponse,
+  OrganizationRiskStatsResponse,
+  RealtimeSummaryResponse,
+  RiskStatsGranularity,
+} from './types/api'
 
 import {
   navigationItems,
@@ -46,7 +57,6 @@ import {
   initialRiskUsers,
   alertItems,
   sessionRows,
-  hourlyTrendData,
   todayStr,
   weekAgoStr
 } from './data/mockData'
@@ -182,14 +192,6 @@ function UserDetailModal({ userName, riskUsers: _riskUsers, alertItems, sessionR
   )
 }
 
-function getWeekOfMonthStr(dateStr: string) {
-  const d = new Date(dateStr)
-  const month = d.getMonth() + 1
-  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).getDay()
-  const week = Math.ceil((d.getDate() + firstDay) / 7)
-  return `${d.getFullYear()}-${String(month).padStart(2, '0')} ${week}주차`
-}
-
 function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
   if (axios.isAxiosError<{ message?: string }>(error)) {
     const message = error.response?.data?.message
@@ -198,6 +200,52 @@ function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
     }
   }
   return fallbackMessage
+}
+
+const statTypeToGranularity: Record<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly', RiskStatsGranularity> = {
+  hourly: 'HOUR',
+  daily: 'DAY',
+  weekly: 'WEEK',
+  monthly: 'MONTH',
+  yearly: 'YEAR',
+}
+
+function getDateBefore(baseDate: Date, days: number) {
+  const date = new Date(baseDate)
+  date.setDate(date.getDate() - days)
+  return date
+}
+
+function toInputDateString(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatHourLabel(dateTime: string) {
+  const date = new Date(dateTime)
+  return `${String(date.getHours()).padStart(2, '0')}:00`
+}
+
+function formatBucketLabel(
+  bucketStart: string,
+  bucketEnd: string,
+  statType: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+) {
+  const start = new Date(bucketStart)
+  const end = new Date(bucketEnd)
+
+  if (statType === 'hourly') {
+    return formatHourLabel(bucketStart)
+  }
+  if (statType === 'daily') {
+    return `${start.getMonth() + 1}/${start.getDate()}`
+  }
+  if (statType === 'weekly') {
+    return `${start.getMonth() + 1}/${start.getDate()}~${end.getMonth() + 1}/${end.getDate()}`
+  }
+  if (statType === 'monthly') {
+    return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
+  }
+  return `${start.getFullYear()}`
 }
 
 export default function App() {
@@ -351,9 +399,17 @@ export default function App() {
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({})
 
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+  const [isOrganizationLoading, setIsOrganizationLoading] = useState(false)
+
+  const [dashboardHourlyRisk, setDashboardHourlyRisk] = useState<MonitoringHourlyRisk24hResponse | null>(null)
+  const [isDashboardHourlyLoading, setIsDashboardHourlyLoading] = useState(false)
+
   const [statType, setStatType] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('hourly')
   const [statStartDate, setStatStartDate] = useState(weekAgoStr)
   const [statEndDate, setStatEndDate] = useState(todayStr)
+  const [analysisStats, setAnalysisStats] = useState<OrganizationRiskStatsResponse | null>(null)
+  const [isAnalysisStatsLoading, setIsAnalysisStatsLoading] = useState(false)
 
   const [membersQuery, setMembersQuery] = useState('')
   
@@ -396,6 +452,182 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setOrganizationId(null)
+      setDashboardHourlyRisk(null)
+      setAnalysisStats(null)
+      return
+    }
+
+    let isMounted = true
+    const loadOrganizationId = async () => {
+      setIsOrganizationLoading(true)
+      try {
+        const resolvedOrganizationId = await fetchMyOrganizationId()
+        if (!isMounted) {
+          return
+        }
+        setOrganizationId(resolvedOrganizationId)
+      } catch (error: unknown) {
+        console.error('Failed to resolve organization id:', error)
+        if (!isMounted) {
+          return
+        }
+        setOrganizationId(null)
+        toast.error(extractApiErrorMessage(error, '조직 정보를 불러오지 못했습니다.'))
+      } finally {
+        if (isMounted) {
+          setIsOrganizationLoading(false)
+        }
+      }
+    }
+
+    loadOrganizationId()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return
+    }
+
+    let isMounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const loadDashboardHourlyRisk = async () => {
+      setIsDashboardHourlyLoading(true)
+      try {
+        const response = await fetchDashboardHourlyRisk24h()
+        if (isMounted) {
+          setDashboardHourlyRisk(response)
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch dashboard hourly risk:', error)
+        if (isMounted && activeTab === 'dashboard') {
+          toast.error(extractApiErrorMessage(error, '대시보드 시간대 통계를 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsDashboardHourlyLoading(false)
+        }
+      }
+    }
+
+    loadDashboardHourlyRisk()
+    if (activeTab === 'dashboard') {
+      intervalId = setInterval(loadDashboardHourlyRisk, 60000)
+    }
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isLoggedIn, activeTab])
+
+  useEffect(() => {
+    if (!isLoggedIn || activeTab !== 'statistics') {
+      return
+    }
+    if (!organizationId) {
+      return
+    }
+    if (statStartDate > statEndDate) {
+      setAnalysisStats(null)
+      return
+    }
+
+    let isMounted = true
+    const loadAnalysisStats = async () => {
+      setIsAnalysisStatsLoading(true)
+      try {
+        const response = await fetchOrganizationRiskStats(organizationId, {
+          granularity: statTypeToGranularity[statType],
+          from: statStartDate,
+          to: statEndDate,
+        })
+        if (isMounted) {
+          setAnalysisStats(response)
+        }
+      } catch (error: unknown) {
+        console.error('Failed to fetch analysis stats:', error)
+        if (isMounted) {
+          setAnalysisStats(null)
+          toast.error(extractApiErrorMessage(error, '분석 통계를 불러오지 못했습니다.'))
+        }
+      } finally {
+        if (isMounted) {
+          setIsAnalysisStatsLoading(false)
+        }
+      }
+    }
+
+    loadAnalysisStats()
+    return () => {
+      isMounted = false
+    }
+  }, [isLoggedIn, activeTab, organizationId, statType, statStartDate, statEndDate])
+
+  const dashboardHourlyChartData = (dashboardHourlyRisk?.buckets ?? []).map((bucket) => ({
+    label: formatHourLabel(bucket.bucketStart),
+    value: bucket.totalRiskCount,
+  }))
+
+  const dashboardPeakRiskHour = dashboardHourlyChartData.reduce(
+    (best, current) => (current.value > best.value ? current : best),
+    { label: '-', value: 0 }
+  )
+  const dashboardTotalRiskCount = dashboardHourlyChartData.reduce((sum, row) => sum + row.value, 0)
+
+  const analysisSeries = analysisStats?.series ?? []
+  const totalSessions = analysisSeries.reduce((sum, row) => sum + row.sessionCount, 0)
+  const totalDrowsy = analysisSeries.reduce((sum, row) => sum + row.drowsyCount, 0)
+  const totalSleep = analysisSeries.reduce((sum, row) => sum + row.sleepCount, 0)
+  const totalRisk = analysisSeries.reduce((sum, row) => sum + row.totalRiskCount, 0)
+
+  const analysisChartData = analysisSeries.map((row) => ({
+    name: formatBucketLabel(row.bucketStart, row.bucketEnd, statType),
+    l1: row.drowsyCount,
+    l2: row.sleepCount,
+    total: row.totalRiskCount,
+  }))
+
+  const analysisTop5Members = analysisStats?.top5Members ?? []
+
+  const applyStatTypePreset = (type: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly') => {
+    setStatType(type)
+    const today = new Date()
+    const end = toInputDateString(today)
+
+    if (type === 'hourly') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 2)))
+      setStatEndDate(end)
+      return
+    }
+    if (type === 'daily') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 14)))
+      setStatEndDate(end)
+      return
+    }
+    if (type === 'weekly') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 56)))
+      setStatEndDate(end)
+      return
+    }
+    if (type === 'monthly') {
+      setStatStartDate(toInputDateString(getDateBefore(today, 180)))
+      setStatEndDate(end)
+      return
+    }
+
+    setStatStartDate(toInputDateString(getDateBefore(today, 365 * 2)))
+    setStatEndDate(end)
   }
 
   if (isAuthInitializing) {
@@ -667,18 +899,28 @@ export default function App() {
                     {id === 'hourlyTrend' && (
                       <div className="flex flex-col h-full">
                         <div className="flex justify-between items-center mb-4">
-                          <span className="text-xs font-bold text-slate-500">피크 시간: 22:00</span>
-                          <span className="text-xs font-bold text-slate-500">누적: {alertItems.length}건</span>
+                          <span className="text-xs font-bold text-slate-500">피크 시간: {dashboardPeakRiskHour.label}</span>
+                          <span className="text-xs font-bold text-slate-500">누적: {dashboardTotalRiskCount}건</span>
                         </div>
                         <div className="flex-1 min-h-[150px] relative w-full h-full">
-                          <ResponsiveContainer width="99%" height="100%" minHeight={150}>
-                            <LineChart data={hourlyTrendData}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} dy={10} />
-                              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                              <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                            </LineChart>
-                          </ResponsiveContainer>
+                          {isDashboardHourlyLoading ? (
+                            <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                              시간대 통계를 불러오는 중...
+                            </div>
+                          ) : dashboardHourlyChartData.length > 0 ? (
+                            <ResponsiveContainer width="99%" height="100%" minHeight={150}>
+                              <LineChart data={dashboardHourlyChartData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} dy={10} />
+                                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full min-h-[150px] grid place-items-center text-sm font-bold text-slate-400">
+                              표시할 시간대 통계가 없습니다.
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -932,157 +1174,156 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'statistics' && (() => {
-          const filtered = alertItems.filter(item => {
-            const t = new Date(item.date).getTime();
-            return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime());
-          })
-          const grouped = filtered.reduce((acc, item) => {
-            let key = ''
-            if (statType === 'hourly') { const h = parseInt(item.time.split(':')[0]); key = `${item.date} ${String(h).padStart(2, '0')}:00` }
-            else if (statType === 'daily') { key = item.date }
-            else if (statType === 'weekly') { key = getWeekOfMonthStr(item.date) }
-            else if (statType === 'monthly') { key = `${item.date.substring(0, 4)}-${item.date.substring(5, 7)}월` }
-            else if (statType === 'yearly') { key = `${item.date.substring(0, 4)}년` }
-            if (!acc[key]) acc[key] = { key, total: 0, l1: 0, l2: 0, items: [] }
-            acc[key].total++; if (item.level === 'L1') acc[key].l1++; if (item.level === 'L2') acc[key].l2++; acc[key].items.push(item); return acc
-          }, {} as Record<string, any>)
-          
-          const statResult = Object.values(grouped).sort((a: any, b: any) => a.key.localeCompare(b.key)); 
-          const chartData = statResult.map(r => ({
-            name: statType === 'hourly' ? r.key.split(' ')[1] : statType === 'monthly' ? r.key : r.key.split('-').pop(),
-            l1: r.l1,
-            l2: r.l2,
-            total: r.total
-          }))
-
-          const totalSessions = sessionRows.filter(s => { const t = new Date(s.date).getTime(); return !(t < new Date(statStartDate).getTime() || t > new Date(statEndDate).getTime()) }).length;
-          const totalAlerts = filtered.length;
-          const totalL1 = filtered.filter(a => a.level === 'L1').length;
-          const totalL2 = filtered.filter(a => a.level === 'L2').length;
-          const riskUsersStats = Object.entries(filtered.reduce((acc, a) => { acc[a.user] = (acc[a.user] || 0) + 1; return acc; }, {} as Record<string, number>)).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-          return (
-            <div className="flex flex-col gap-6">
-              <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">분석</h1>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
-                  {['hourly', 'daily', 'weekly', 'monthly', 'yearly'].map(type => (
-                    <button 
-                      key={type}
-                      type="button" 
-                      className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-all ${statType === type ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} 
-                      onClick={() => { 
-                        setStatType(type as any); 
-                        if(type==='yearly') {setStatStartDate('2024-01-01'); setStatEndDate('2026-12-31')}
-                        else if(type==='monthly') {setStatStartDate('2026-01-01'); setStatEndDate('2026-12-31')}
-                        else {setStatStartDate(weekAgoStr); setStatEndDate(todayStr)}
-                      }}>
-                      {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
-                    </button>
-                  ))}
-                  <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
-                  <input type="date" value={statStartDate} onChange={e => setStatStartDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
-                  <span className="text-slate-400">~</span>
-                  <input type="date" value={statEndDate} onChange={e => setStatEndDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
-                </div>
-              </header>
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">해당 기간 총 세션</p>
-                  <p className="text-3xl font-black text-slate-900 m-0">{totalSessions}</p>
-                </div>
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">졸음</p>
-                  <p className="text-3xl font-black text-amber-500 m-0">{totalL1}</p>
-                </div>
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">수면</p>
-                  <p className="text-3xl font-black text-red-500 m-0">{totalL2}</p>
-                </div>
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                  <p className="text-sm font-bold text-slate-500 mb-2">전체 발생 알림</p>
-                  <p className="text-3xl font-black text-slate-900 m-0">{totalAlerts}</p>
-                </div>
+        {activeTab === 'statistics' && (
+          <div className="flex flex-col gap-6">
+            <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">분석</h1>
               </div>
+              <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                {['hourly', 'daily', 'weekly', 'monthly', 'yearly'].map(type => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-all ${statType === type ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => applyStatTypePreset(type as 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly')}
+                  >
+                    {type === 'hourly' ? '시간대' : type === 'daily' ? '일' : type === 'weekly' ? '주' : type === 'monthly' ? '월' : '년'}
+                  </button>
+                ))}
+                <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
+                <input type="date" value={statStartDate} onChange={e => setStatStartDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
+                <span className="text-slate-400">~</span>
+                <input type="date" value={statEndDate} onChange={e => setStatEndDate(e.target.value)} className="px-2 py-1 bg-transparent text-sm font-bold text-slate-600 outline-none" />
+              </div>
+            </header>
 
-              {chartData.length > 0 ? (
-                <>
-                  <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-lg font-black text-slate-900 m-0">추이 분석 (Recharts)</h2>
-                      <div className="flex gap-4">
-                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">졸음</span></div>
-                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">수면</span></div>
-                      </div>
-                    </div>
-                    <div className="w-full h-[300px] min-h-[300px] min-w-0">
-                      <ResponsiveContainer width="99%" height={300}>
-                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
-                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
-                          <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                          <Line type="monotone" dataKey="l1" name="졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                          <Line type="monotone" dataKey="l2" name="수면" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </section>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {statStartDate > statEndDate ? (
+              <div className="p-8 text-center text-red-500 bg-white border border-red-100 rounded-2xl shadow-sm font-bold">
+                시작일은 종료일보다 이후일 수 없습니다.
+              </div>
+            ) : isOrganizationLoading ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                조직 정보를 불러오는 중입니다...
+              </div>
+            ) : !organizationId ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                조직 식별 정보를 확인할 수 없습니다.
+              </div>
+            ) : isAnalysisStatsLoading ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                분석 통계를 불러오는 중입니다...
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">해당 기간 총 세션</p>
+                    <p className="text-3xl font-black text-slate-900 m-0">{totalSessions}</p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">졸음</p>
+                    <p className="text-3xl font-black text-amber-500 m-0">{totalDrowsy}</p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">수면</p>
+                    <p className="text-3xl font-black text-red-500 m-0">{totalSleep}</p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                    <p className="text-sm font-bold text-slate-500 mb-2">전체 발생 알림</p>
+                    <p className="text-3xl font-black text-slate-900 m-0">{totalRisk}</p>
+                  </div>
+                </div>
+
+                {analysisChartData.length > 0 ? (
+                  <>
                     <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                      <h2 className="text-lg font-black text-slate-900 m-0 mb-4">데이터 테이블</h2>
-                      <div className="overflow-x-auto rounded-xl border border-slate-100">
-                        <table className="w-full text-sm text-left">
-                          <thead className="bg-slate-50 text-slate-500">
-                            <tr><th className="p-3 font-bold border-b border-slate-100">기준</th><th className="p-3 font-bold border-b border-slate-100">총 알림</th><th className="p-3 font-bold border-b border-slate-100">졸음</th><th className="p-3 font-bold border-b border-slate-100">수면</th></tr>
-                          </thead>
-                          <tbody>
-                            {statResult.slice(0, 5).map((row: any) => (
-                              <tr key={row.key} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                                <td className="p-3 font-bold text-slate-700">{statType === 'hourly' ? row.key.split(' ')[1] : row.key}</td>
-                                <td className="p-3 font-black text-slate-900">{row.total}</td>
-                                <td className="p-3 text-amber-600 font-bold">{row.l1}</td>
-                                <td className="p-3 text-red-600 font-bold">{row.l2}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-lg font-black text-slate-900 m-0">추이 분석 (Recharts)</h2>
+                        <div className="flex gap-4">
+                          <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-amber-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">졸음</span></div>
+                          <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-red-500 rounded-full" /> <span className="text-xs font-bold text-slate-500">수면</span></div>
+                        </div>
+                      </div>
+                      <div className="w-full h-[300px] min-h-[300px] min-w-0">
+                        <ResponsiveContainer width="99%" height={300}>
+                          <LineChart data={analysisChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
+                            <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                            <Line type="monotone" dataKey="l1" name="졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                            <Line type="monotone" dataKey="l2" name="수면" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
                       </div>
                     </section>
 
-                    <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                      <h2 className="text-lg font-black text-slate-900 m-0 mb-4">주의가 필요한 사용자 Top 5</h2>
-                      <div className="flex flex-col gap-3">
-                        {riskUsersStats.map(([name, count], index) => {
-                          return (
-                            <div key={name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                              <div className="flex items-center gap-3">
-                                <div className="grid w-8 h-8 place-items-center rounded-full bg-red-100 text-red-600 font-black text-sm">{index + 1}</div>
-                                <div>
-                                  <strong className="block text-sm font-bold text-slate-900">{name}</strong>
-                                  
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                        <h2 className="text-lg font-black text-slate-900 m-0 mb-4">데이터 테이블</h2>
+                        <div className="overflow-x-auto rounded-xl border border-slate-100">
+                          <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500">
+                              <tr>
+                                <th className="p-3 font-bold border-b border-slate-100">기준</th>
+                                <th className="p-3 font-bold border-b border-slate-100">세션</th>
+                                <th className="p-3 font-bold border-b border-slate-100">총 알림</th>
+                                <th className="p-3 font-bold border-b border-slate-100">졸음</th>
+                                <th className="p-3 font-bold border-b border-slate-100">수면</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {analysisSeries.slice(0, 10).map((row) => (
+                                <tr key={`${row.bucketStart}_${row.bucketEnd}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                  <td className="p-3 font-bold text-slate-700">{formatBucketLabel(row.bucketStart, row.bucketEnd, statType)}</td>
+                                  <td className="p-3 font-black text-slate-900">{row.sessionCount}</td>
+                                  <td className="p-3 font-black text-slate-900">{row.totalRiskCount}</td>
+                                  <td className="p-3 text-amber-600 font-bold">{row.drowsyCount}</td>
+                                  <td className="p-3 text-red-600 font-bold">{row.sleepCount}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+
+                      <section className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                        <h2 className="text-lg font-black text-slate-900 m-0 mb-4">주의가 필요한 사용자 Top 5</h2>
+                        {analysisTop5Members.length > 0 ? (
+                          <div className="flex flex-col gap-3">
+                            {analysisTop5Members.map((member, index) => (
+                              <div key={member.userId} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                  <div className="grid w-8 h-8 place-items-center rounded-full bg-red-100 text-red-600 font-black text-sm">{index + 1}</div>
+                                  <div>
+                                    <strong className="block text-sm font-bold text-slate-900">{member.name || `사용자 ${index + 1}`}</strong>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">알림</span>
+                                  <strong className="text-base font-black text-red-600 leading-none">{member.totalRiskCount}건</strong>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">알림</span>
-                                <strong className="text-base font-black text-red-600 leading-none">{count}건</strong>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </section>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-slate-400 font-bold bg-slate-50 border border-slate-100 rounded-xl">
+                            해당 기간 Top 5 데이터가 없습니다.
+                          </div>
+                        )}
+                      </section>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-12 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">
+                    해당 조건에 맞는 데이터가 없습니다.
                   </div>
-                </>
-              ) : <div className="p-12 text-center text-slate-500 bg-white border border-slate-100 rounded-2xl shadow-sm font-bold">해당 조건에 맞는 데이터가 없습니다.</div>}
-            </div>
-          )
-        })()}
+                )}
+              </>
+            )}
+          </div>
+        )}
         
         {activeTab === 'account' && (
           <div className="flex flex-col gap-6">
