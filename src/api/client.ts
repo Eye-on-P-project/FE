@@ -1,21 +1,98 @@
-import axios from 'axios';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import type { LoginResponse } from '../types/api'
 
-// 백엔드 기본 설정
+const API_BASE_URL = 'http://localhost:8080'
+
+type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
+
+let accessToken: string | null = null
+let refreshPromise: Promise<string | null> | null = null
+
+const baseHeaders = {
+  'Content-Type': 'application/json',
+  'X-Client-Type': 'WEB',
+}
+
 const apiClient = axios.create({
-  baseURL: 'http://localhost:8080', // 백엔드 주소
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Client-Type': 'WEB', // 설명서(Swagger)의 필수 헤더
-  },
-});
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: baseHeaders,
+})
 
-// (선택사항) 토큰이 생기면 모든 요청에 자동으로 넣어주는 기능
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+const refreshClient = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: baseHeaders,
+})
+
+export const setAccessToken = (token: string | null) => {
+  accessToken = token
+}
+
+export const clearAccessToken = () => {
+  accessToken = null
+}
+
+const requestNewAccessToken = async (): Promise<string | null> => {
+  try {
+    const response = await refreshClient.post<LoginResponse>('/api/auth/refresh')
+    const newAccessToken = response.data.accessToken
+    setAccessToken(newAccessToken)
+    return newAccessToken
+  } catch {
+    clearAccessToken()
+    return null
   }
-  return config;
-});
+}
 
-export default apiClient;
+export const ensureWebSession = async (): Promise<boolean> => {
+  const newAccessToken = await requestNewAccessToken()
+  return Boolean(newAccessToken)
+}
+
+apiClient.interceptors.request.use((config) => {
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`
+  }
+  return config
+})
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as RetryableRequestConfig | undefined
+    const requestUrl = originalRequest?.url ?? ''
+
+    const isAuthEndpoint =
+      requestUrl.includes('/api/auth/login')
+      || requestUrl.includes('/api/auth/signup')
+      || requestUrl.includes('/api/auth/refresh')
+
+    if (
+      !originalRequest
+      || originalRequest._retry
+      || error.response?.status !== 401
+      || isAuthEndpoint
+    ) {
+      return Promise.reject(error)
+    }
+
+    originalRequest._retry = true
+
+    if (!refreshPromise) {
+      refreshPromise = requestNewAccessToken().finally(() => {
+        refreshPromise = null
+      })
+    }
+
+    const newAccessToken = await refreshPromise
+    if (!newAccessToken) {
+      return Promise.reject(error)
+    }
+
+    originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+    return apiClient(originalRequest)
+  }
+)
+
+export default apiClient
