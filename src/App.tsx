@@ -248,7 +248,7 @@ function formatBucketLabel(
   const end = new Date(bucketEnd)
 
   if (statType === 'hourly') {
-    return formatHourLabel(bucketStart)
+    return `${start.getMonth() + 1}/${start.getDate()} ${String(start.getHours()).padStart(2, '0')}:00`
   }
   if (statType === 'daily') {
     return `${start.getMonth() + 1}/${start.getDate()}`
@@ -1047,7 +1047,8 @@ export default function App() {
   const totalRisk = analysisSeries.reduce((sum, row) => sum + row.totalRiskCount, 0)
 
   const analysisChartData = analysisSeries.map((row) => ({
-    name: formatBucketLabel(row.bucketStart, row.bucketEnd, statType),
+    xKey: row.bucketStart,
+    label: formatBucketLabel(row.bucketStart, row.bucketEnd, statType),
     l1: row.drowsyCount,
     l2: row.sleepCount,
     total: row.totalRiskCount,
@@ -1853,9 +1854,24 @@ export default function App() {
                         <ResponsiveContainer width="99%" height={300}>
                           <LineChart data={analysisChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
+                            <XAxis
+                              dataKey="xKey"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
+                              dy={10}
+                              tickFormatter={(_value, index) => analysisChartData[index]?.label ?? ''}
+                            />
                             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
-                            <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                            <Tooltip
+                              contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                              labelFormatter={(_value, payload) => {
+                                if (!payload || payload.length === 0) {
+                                  return '-'
+                                }
+                                return payload[0]?.payload?.label ?? '-'
+                              }}
+                            />
                             <Line type="monotone" dataKey="l1" name="졸음" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
                             <Line type="monotone" dataKey="l2" name="수면" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
                           </LineChart>
