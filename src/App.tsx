@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import {
   Activity,
@@ -80,6 +80,42 @@ const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
 const NOTIFICATION_PAGE_SIZE = 50
 const MAX_ALERT_ITEMS = 500
+
+function serializeLayouts(layouts: ResponsiveLayouts) {
+  return JSON.stringify(layouts)
+}
+
+function isRealtimeSummaryEqual(
+  previous: RealtimeSummaryResponse | null,
+  next: RealtimeSummaryResponse
+) {
+  if (!previous) {
+    return false
+  }
+
+  return (
+    previous.totalMemberCount === next.totalMemberCount
+    && previous.activeSessionCount === next.activeSessionCount
+    && previous.warningSessionCount === next.warningSessionCount
+    && previous.drowsyWarningSessionCount === next.drowsyWarningSessionCount
+    && previous.sleepWarningSessionCount === next.sleepWarningSessionCount
+  )
+}
+
+function DashboardClockBadge() {
+  const [currentTime, setCurrentTime] = useState(() => new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
+      <Clock3 size={16} /> {currentTime.toLocaleString('ko-KR')} 기준
+    </div>
+  )
+}
 
 function SummaryCard({ icon: Icon, label, value, detail }: { icon: any, label: string, value: string, detail: string }) {
   return (
@@ -420,13 +456,6 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
 
-  const [currentTime, setCurrentTime] = useState(new Date())
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
   useEffect(() => {
     let isMounted = true
 
@@ -449,6 +478,7 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
 
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(defaultLayouts)
+  const latestLayoutsSerializedRef = useRef(serializeLayouts(defaultLayouts))
   const [visibleWidgets, setVisibleWidgets] = useState<Record<WidgetId, boolean>>({
     activeUsers: true,
     riskUsers: true,
@@ -460,7 +490,13 @@ export default function App() {
   useEffect(() => {
     const savedLayouts = localStorage.getItem(LAYOUTS_STORAGE_KEY)
     if (savedLayouts) {
-      try { setLayouts(JSON.parse(savedLayouts)) } catch (e) { console.error('Failed to parse layouts:', e) }
+      try {
+        const parsedLayouts = JSON.parse(savedLayouts) as ResponsiveLayouts
+        setLayouts(parsedLayouts)
+        latestLayoutsSerializedRef.current = serializeLayouts(parsedLayouts)
+      } catch (e) {
+        console.error('Failed to parse layouts:', e)
+      }
     }
     const savedVisible = localStorage.getItem(VISIBLE_STORAGE_KEY)
     if (savedVisible) {
@@ -469,8 +505,13 @@ export default function App() {
   }, [])
 
   const handleLayoutChange = (_: any, allLayouts: ResponsiveLayouts) => {
+    const nextSerializedLayouts = serializeLayouts(allLayouts)
+    if (nextSerializedLayouts === latestLayoutsSerializedRef.current) {
+      return
+    }
+    latestLayoutsSerializedRef.current = nextSerializedLayouts
     setLayouts(allLayouts)
-    localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(allLayouts))
+    localStorage.setItem(LAYOUTS_STORAGE_KEY, nextSerializedLayouts)
   }
 
   const toggleWidget = (id: WidgetId) => {
@@ -480,8 +521,10 @@ export default function App() {
   }
 
   const resetDashboard = () => {
+    const serializedDefaultLayouts = serializeLayouts(defaultLayouts)
     setLayouts(defaultLayouts)
-    localStorage.setItem(LAYOUTS_STORAGE_KEY, JSON.stringify(defaultLayouts))
+    latestLayoutsSerializedRef.current = serializedDefaultLayouts
+    localStorage.setItem(LAYOUTS_STORAGE_KEY, serializedDefaultLayouts)
     const allVisible = { activeUsers: true, riskUsers: true, alertFeed: true, hourlyTrend: true, sessionTable: true }
     setVisibleWidgets(allVisible)
     localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(allVisible))
@@ -630,7 +673,9 @@ export default function App() {
             signal: abortController.signal,
             onSummary: (summary) => {
               if (!isCancelled) {
-                setRealtimeSummary(summary)
+                setRealtimeSummary((previous) => (
+                  isRealtimeSummaryEqual(previous, summary) ? previous : summary
+                ))
               }
             },
             onAlert: (notification) => {
@@ -1267,9 +1312,7 @@ export default function App() {
                 <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">대시보드</h1>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600">
-                  <Clock3 size={16} /> {currentTime.toLocaleString('ko-KR')} 기준
-                </div>
+                <DashboardClockBadge />
                 <button onClick={() => setIsEditMode(!isEditMode)} className={`flex items-center gap-2 h-10 px-4 rounded-xl border text-sm font-bold shadow-sm transition-colors ${isEditMode ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                   {isEditMode ? <><Check size={16} /> 편집 완료</> : <><SquarePen size={16} /> 위젯 편집</>}
                 </button>
@@ -1350,7 +1393,7 @@ export default function App() {
               breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
               cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
               rowHeight={30}
-              onLayoutChange={handleLayoutChange}
+              onLayoutChange={isEditMode ? handleLayoutChange : undefined}
               draggableHandle=".drag-handle"
               isDraggable={isEditMode}
               isResizable={isEditMode}
