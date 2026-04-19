@@ -87,6 +87,8 @@ apiClient.interceptors.response.use(
 
     const newAccessToken = await refreshPromise
     if (!newAccessToken) {
+      // Refresh 실패 시 로그인 페이지로 이동하거나 세션 초기화
+      window.location.href = '/' 
       return Promise.reject(error)
     }
 

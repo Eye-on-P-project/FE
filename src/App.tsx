@@ -36,7 +36,7 @@ import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
 import apiClient, { clearAccessToken, ensureWebSession, setAccessToken } from './api/client'
-import type { LoginResponse } from './types/api'
+import type { LoginResponse, RealtimeSummaryResponse } from './types/api'
 
 import {
   navigationItems,
@@ -365,6 +365,25 @@ export default function App() {
   const [alertFilterEndDate, setAlertFilterEndDate] = useState(todayStr)
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
+  const [realtimeSummary, setRealtimeSummary] = useState<RealtimeSummaryResponse | null>(null)
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const fetchSummary = async () => {
+      try {
+        const response = await apiClient.get<RealtimeSummaryResponse>('/api/monitoring/dashboard/realtime-summary')
+        setRealtimeSummary(response.data)
+      } catch (error) {
+        console.error('Failed to fetch realtime summary:', error)
+      }
+    }
+
+    fetchSummary()
+    const interval = setInterval(fetchSummary, 1000) // 1초마다 갱신
+    return () => clearInterval(interval)
+  }, [isLoggedIn])
+
   const handleExport = () => {
     const csvContent = "\uFEFFDate,Time,User,Level,Note\n"
       + alertItems.map(a => `${a.date},${a.time},${a.user},${a.level},${a.note}`).join("\n");
@@ -520,10 +539,10 @@ export default function App() {
               </div>
 
               {(() => {
-                const activeAlerts = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline);
-                const l1Count = activeAlerts.filter(a => a.level === 'L1').length;
-                const l2Count = activeAlerts.filter(a => a.level === 'L2').length;
-                const hasAlerts = activeAlerts.length > 0;
+                const alertCount = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                const l1Count = realtimeSummary?.drowsyWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L1').length;
+                const l2Count = realtimeSummary?.sleepWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L2').length;
+                const hasAlerts = alertCount > 0;
                 
                 return (
                   <div className={`w-full lg:w-[320px] xl:w-[400px] p-5 rounded-2xl shadow-sm flex flex-col justify-center relative overflow-hidden transition-all ${hasAlerts ? 'bg-red-600 border border-red-700 text-white shadow-red-500/30' : 'bg-slate-50 border border-slate-200 text-slate-400'}`}>
@@ -545,7 +564,7 @@ export default function App() {
                         <h2 className={`text-sm font-black m-0 tracking-wider ${hasAlerts ? 'text-white' : 'text-slate-500'}`}>실시간 세션 경고</h2>
                       </div>
                       <div className="flex items-end gap-3">
-                        <div className={`text-5xl font-black ${hasAlerts ? 'text-white' : 'text-slate-300'}`}>{activeAlerts.length}</div>
+                        <div className={`text-5xl font-black ${hasAlerts ? 'text-white' : 'text-slate-300'}`}>{alertCount}</div>
                         <div className={`text-sm font-bold pb-1 ${hasAlerts ? 'opacity-90' : 'opacity-50'}`}>진행중</div>
                       </div>
                       {hasAlerts && (
@@ -588,9 +607,9 @@ export default function App() {
                   </div>
                   <div className="flex-1 overflow-auto p-4 custom-scrollbar">
                     {id === 'activeUsers' && (() => {
-                      const total = riskUsersState.length;
-                      const active = riskUsersState.filter(u => u.isOnline).length;
-                      const alerting = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                      const total = realtimeSummary?.totalMemberCount ?? riskUsersState.length;
+                      const active = realtimeSummary?.activeSessionCount ?? riskUsersState.filter(u => u.isOnline).length;
+                      const alerting = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
                       return (
                         <div className="flex flex-col h-full justify-between gap-4">
                           <div className="flex-1 p-4 rounded-xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center text-center">
@@ -703,8 +722,18 @@ export default function App() {
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <SummaryCard icon={Activity} label="현재 모니터링 인원" value={riskUsersState.filter(u => u.isOnline).length.toString()} detail={`활성화 ${riskUsersState.filter(u => u.isOnline).length}명 / 비활성화 ${riskUsersState.filter(u => !u.isOnline).length}명`} />
-              <SummaryCard icon={BellRing} label="금일 경고 알림" value={alertItems.filter(a => a.date === todayStr).length.toString()} detail={`졸음 ${alertItems.filter(a => a.date === todayStr && a.level === 'L1').length}건 / 수면 ${alertItems.filter(a => a.date === todayStr && a.level === 'L2').length}건`} />
+              <SummaryCard 
+                icon={Activity} 
+                label="현재 모니터링 인원" 
+                value={realtimeSummary?.activeSessionCount.toString() ?? riskUsersState.filter(u => u.isOnline).length.toString()} 
+                detail={`전체 구성원 ${realtimeSummary?.totalMemberCount ?? riskUsersState.length}명 중 모니터링 활성화 상태`} 
+              />
+              <SummaryCard 
+                icon={BellRing} 
+                label="실시간 경고 (진행중)" 
+                value={realtimeSummary?.warningSessionCount.toString() ?? alertItems.filter(a => a.date === todayStr).length.toString()} 
+                detail={`졸음 ${realtimeSummary?.drowsyWarningSessionCount ?? 0}건 / 수면 ${realtimeSummary?.sleepWarningSessionCount ?? 0}건`} 
+              />
             </div>
 
             {(() => {
