@@ -380,7 +380,7 @@ export default function App() {
     }
 
     fetchSummary()
-    const interval = setInterval(fetchSummary, 5000) // 5초마다 갱신
+    const interval = setInterval(fetchSummary, 1000) // 1초마다 갱신
     return () => clearInterval(interval)
   }, [isLoggedIn])
 
@@ -539,10 +539,10 @@ export default function App() {
               </div>
 
               {(() => {
-                const activeAlerts = alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline);
-                const l1Count = activeAlerts.filter(a => a.level === 'L1').length;
-                const l2Count = activeAlerts.filter(a => a.level === 'L2').length;
-                const hasAlerts = activeAlerts.length > 0;
+                const alertCount = realtimeSummary?.warningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline).length;
+                const l1Count = realtimeSummary?.drowsyWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L1').length;
+                const l2Count = realtimeSummary?.sleepWarningSessionCount ?? alertItems.filter(a => a.status === '진행중' && riskUsersState.find(u => u.name === a.user)?.isOnline && a.level === 'L2').length;
+                const hasAlerts = alertCount > 0;
                 
                 return (
                   <div className={`w-full lg:w-[320px] xl:w-[400px] p-5 rounded-2xl shadow-sm flex flex-col justify-center relative overflow-hidden transition-all ${hasAlerts ? 'bg-red-600 border border-red-700 text-white shadow-red-500/30' : 'bg-slate-50 border border-slate-200 text-slate-400'}`}>
@@ -564,7 +564,7 @@ export default function App() {
                         <h2 className={`text-sm font-black m-0 tracking-wider ${hasAlerts ? 'text-white' : 'text-slate-500'}`}>실시간 세션 경고</h2>
                       </div>
                       <div className="flex items-end gap-3">
-                        <div className={`text-5xl font-black ${hasAlerts ? 'text-white' : 'text-slate-300'}`}>{activeAlerts.length}</div>
+                        <div className={`text-5xl font-black ${hasAlerts ? 'text-white' : 'text-slate-300'}`}>{alertCount}</div>
                         <div className={`text-sm font-bold pb-1 ${hasAlerts ? 'opacity-90' : 'opacity-50'}`}>진행중</div>
                       </div>
                       {hasAlerts && (
