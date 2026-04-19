@@ -78,7 +78,6 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
-const ALERT_ACTIVE_WINDOW_MS = 5 * 60 * 1000
 const NOTIFICATION_PAGE_SIZE = 50
 const MAX_ALERT_ITEMS = 500
 
@@ -340,17 +339,27 @@ function mapRecentEndedSessionsToRows(response: MonitoringRecentEndedSessionResp
   }))
 }
 
-function mapNotificationToAlertItem(notification: MonitoringNotificationResponse): AlertItem {
+function mapNotificationToAlertItem(
+  notification: MonitoringNotificationResponse,
+  status: AlertItem['status'] = '종료됨'
+): AlertItem {
+  const level = notification.type === 'SLEEP' ? 'L2' : 'L1'
+  const note = notification.content?.trim().length
+    ? notification.content
+    : level === 'L2'
+      ? '수면 상태 경고가 감지되었습니다.'
+      : '졸음 의심 경고가 감지되었습니다.'
+
   return {
-    notificationId: notification.notificationId,
+    notificationId: notification.notificationId ?? undefined,
     userId: notification.userId,
     user: notification.userName?.trim() || `사용자 ${notification.userId}`,
-    level: notification.type === 'SLEEP' ? 'L2' : 'L1',
+    level,
     date: formatSessionDate(notification.occurredAt),
     time: formatSessionTime(notification.occurredAt),
-    note: notification.content,
+    note,
     occurredAt: notification.occurredAt,
-    status: '종료됨',
+    status,
   }
 }
 
@@ -363,14 +372,6 @@ function getAlertTimestamp(item: AlertItem): number {
   }
   const fallbackTime = new Date(`${item.date}T${item.time}:00`).getTime()
   return Number.isNaN(fallbackTime) ? 0 : fallbackTime
-}
-
-function isAlertActive(item: AlertItem, nowTime: number): boolean {
-  const occurredAtTime = getAlertTimestamp(item)
-  if (occurredAtTime <= 0) {
-    return item.status === '진행중'
-  }
-  return nowTime - occurredAtTime <= ALERT_ACTIVE_WINDOW_MS
 }
 
 function mergeAlertItems(previous: AlertItem[], incoming: AlertItem[]): AlertItem[] {
@@ -386,6 +387,24 @@ function mergeAlertItems(previous: AlertItem[], incoming: AlertItem[]): AlertIte
   return Array.from(mergedMap.values())
     .sort((a, b) => getAlertTimestamp(b) - getAlertTimestamp(a))
     .slice(0, MAX_ALERT_ITEMS)
+}
+
+function applyRealtimeNotification(previous: AlertItem[], notification: MonitoringNotificationResponse): AlertItem[] {
+  if (notification.type === 'NORMAL') {
+    return previous.map((item) =>
+      item.userId === notification.userId && item.status === '진행중'
+        ? { ...item, status: '종료됨' as const }
+        : item
+    )
+  }
+
+  const nextAlert = mapNotificationToAlertItem(notification, '진행중')
+  const closedPrevious = previous.map((item) =>
+    item.userId === nextAlert.userId && item.status === '진행중'
+      ? { ...item, status: '종료됨' as const }
+      : item
+  )
+  return mergeAlertItems(closedPrevious, [nextAlert])
 }
 
 export default function App() {
@@ -618,8 +637,7 @@ export default function App() {
               if (isCancelled) {
                 return
               }
-              const nextAlert = mapNotificationToAlertItem(notification)
-              setAlertItems((prev) => mergeAlertItems(prev, [nextAlert]))
+              setAlertItems((prev) => applyRealtimeNotification(prev, notification))
             },
           })
         } catch (error) {
@@ -680,7 +698,7 @@ export default function App() {
         if (!isMounted) {
           return
         }
-        const mapped = page.items.map(mapNotificationToAlertItem)
+        const mapped = page.items.map((item) => mapNotificationToAlertItem(item, '종료됨'))
         setAlertItems((prev) => mergeAlertItems(prev, mapped))
         setNotificationsNextCursor(page.nextCursor)
         setHasMoreNotifications(page.hasNext)
@@ -715,7 +733,7 @@ export default function App() {
         if (!isMounted) {
           return
         }
-        const mapped = page.items.map(mapNotificationToAlertItem)
+        const mapped = page.items.map((item) => mapNotificationToAlertItem(item, '종료됨'))
         setAlertItems((prev) => mergeAlertItems(prev, mapped))
         setNotificationsNextCursor(page.nextCursor)
         setHasMoreNotifications(page.hasNext)
@@ -747,7 +765,7 @@ export default function App() {
         limit: NOTIFICATION_PAGE_SIZE,
         cursor: notificationsNextCursor,
       })
-      const mapped = page.items.map(mapNotificationToAlertItem)
+      const mapped = page.items.map((item) => mapNotificationToAlertItem(item, '종료됨'))
       setAlertItems((prev) => mergeAlertItems(prev, mapped))
       setNotificationsNextCursor(page.nextCursor)
       setHasMoreNotifications(page.hasNext)
@@ -1078,8 +1096,7 @@ export default function App() {
     return keywords.some((value) => value.includes(normalizedMembersQuery))
   })
 
-  const nowTime = currentTime.getTime()
-  const activeRealtimeAlerts = alertItems.filter((item) => isAlertActive(item, nowTime))
+  const activeRealtimeAlerts = alertItems.filter((item) => item.status === '진행중')
   const activeAlertCount = activeRealtimeAlerts.length
   const activeL1AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L1').length
   const activeL2AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L2').length

@@ -27,7 +27,7 @@ export interface RealtimeSummaryResponse {
 }
 
 export type MonitoringEventType = 'NORMAL' | 'DROWSY' | 'SLEEP';
-export type NotificationType = 'DROWSY' | 'SLEEP';
+export type NotificationType = 'NORMAL' | 'DROWSY' | 'SLEEP';
 
 export interface MonitoringEventResponse {
   eventId: string;
@@ -40,7 +40,7 @@ export interface MonitoringEventResponse {
 }
 
 export interface MonitoringNotificationResponse {
-  notificationId: string;
+  notificationId: string | null;
   userId: string;
   targetUserId: string;
   userName: string;
