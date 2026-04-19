@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import axios from 'axios'
 import {
   Activity,
   BellRing,
@@ -34,7 +35,7 @@ import 'react-resizable/css/styles.css'
 import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
-import apiClient from './api/client'
+import apiClient, { clearAccessToken, ensureWebSession, setAccessToken } from './api/client'
 import type { LoginResponse } from './types/api'
 
 import {
@@ -71,10 +72,8 @@ function SummaryCard({ icon: Icon, label, value, detail }: { icon: any, label: s
   )
 }
 
-function UserDetailModal({ userName, riskUsers, alertItems, sessionRows, onClose, onDelete }: { userName: string, riskUsers: RiskUser[], alertItems: AlertItem[], sessionRows: SessionRow[], onClose: () => void, onDelete: () => void }) {
+function UserDetailModal({ userName, riskUsers: _riskUsers, alertItems, sessionRows, onClose, onDelete }: { userName: string, riskUsers: RiskUser[], alertItems: AlertItem[], sessionRows: SessionRow[], onClose: () => void, onDelete: () => void }) {
   const [filterDays, setFilterDays] = useState<number | null>(7)
-  const [editMode, setEditMode] = useState(false)
-  const user = riskUsers.find(u => u.name === userName) || { name: userName, alertCount: 0, sessionsToday: 0 }
   
 
   const filterByDate = (date: string) => { 
@@ -191,8 +190,19 @@ function getWeekOfMonthStr(dateStr: string) {
   return `${d.getFullYear()}-${String(month).padStart(2, '0')} ${week}주차`
 }
 
+function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
+  if (axios.isAxiosError<{ message?: string }>(error)) {
+    const message = error.response?.data?.message
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message
+    }
+  }
+  return fallbackMessage
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isAuthInitializing, setIsAuthInitializing] = useState(true)
   const [isLoginMode, setIsLoginMode] = useState(true)
   const [operatorCode, setOperatorCode] = useState('')
   const [password, setPassword] = useState('')
@@ -208,6 +218,24 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const restoreWebSession = async () => {
+      const hasValidSession = await ensureWebSession()
+      if (!isMounted) {
+        return
+      }
+      setIsLoggedIn(hasValidSession)
+      setIsAuthInitializing(false)
+    }
+
+    restoreWebSession()
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -260,12 +288,13 @@ export default function App() {
         email: operatorCode,
         password: password
       })
-      localStorage.setItem('accessToken', response.data.accessToken)
+      setAccessToken(response.data.accessToken)
       toast.success('로그인에 성공했습니다!')
       setIsLoggedIn(true)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Login error:', error)
-      toast.error('로그인 실패: 이메일 또는 비밀번호를 확인하세요.')
+      const errorMsg = extractApiErrorMessage(error, '로그인에 실패했습니다. 입력 정보를 확인해 주세요.')
+      toast.error(errorMsg)
     } finally {
       setIsLoading(false)
     }
@@ -305,6 +334,19 @@ export default function App() {
     }
   }
 
+  const handleLogout = async () => {
+    try {
+      await apiClient.post('/api/auth/logout')
+    } catch (error) {
+      console.error('Logout error:', error)
+      const errorMsg = extractApiErrorMessage(error, '로그아웃 처리 중 오류가 발생했습니다.')
+      toast.error(errorMsg)
+    } finally {
+      clearAccessToken()
+      setIsLoggedIn(false)
+    }
+  }
+
   const [riskUsersState, setRiskUsersState] = useState<RiskUser[]>(initialRiskUsers)
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<string | null>(null)
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({})
@@ -336,6 +378,18 @@ export default function App() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }
+
+  if (isAuthInitializing) {
+    return (
+      <div className="flex min-h-screen bg-slate-50 items-center justify-center p-4">
+        <Toaster position="top-right" />
+        <div className="w-full max-w-sm p-8 bg-white border border-slate-200 rounded-3xl shadow-xl text-center">
+          <p className="text-sm font-bold text-slate-500">세션 확인 중...</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!isLoggedIn) {
     return (
       <div className="flex min-h-screen bg-slate-50 items-center justify-center p-4">
@@ -976,7 +1030,6 @@ export default function App() {
                       <h2 className="text-lg font-black text-slate-900 m-0 mb-4">주의가 필요한 사용자 Top 5</h2>
                       <div className="flex flex-col gap-3">
                         {riskUsersStats.map(([name, count], index) => {
-                          const userMeta = riskUsersState.find(u => u.name === name)
                           return (
                             <div key={name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
                               <div className="flex items-center gap-3">
@@ -1031,7 +1084,7 @@ export default function App() {
               <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit">
                 <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
                 <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
-                <button type="button" onClick={() => setIsLoggedIn(false)} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
+                <button type="button" onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
                   <LogOut size={18} /> 안전하게 로그아웃
                 </button>
               </div>

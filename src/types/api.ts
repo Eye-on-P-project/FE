@@ -3,7 +3,7 @@
 export interface LoginResponse {
   userId: number;
   accessToken: string;
-  refreshToken: string;
+  refreshToken: string | null;
   role: 'ADMIN' | 'USER';
 }
 
