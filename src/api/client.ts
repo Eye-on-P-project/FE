@@ -1,7 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import type { LoginResponse } from '../types/api'
 
-export const API_BASE_URL = 'http://localhost:8080'
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
 
