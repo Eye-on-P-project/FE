@@ -108,6 +108,7 @@ export interface OrganizationRiskUserResponse {
   drowsyCount: number;
   sleepCount: number;
   totalRiskCount: number;
+  isMonitoringActive: boolean;
 }
 
 export interface MonitoringRecentEndedSessionResponse {
@@ -133,4 +134,10 @@ export interface OrganizationMemberResponse {
   nickname: string | null;
   role: UserRole | null;
   createdAt: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+  organizationCode: string;
 }
