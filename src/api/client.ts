@@ -35,7 +35,7 @@ export const clearAccessToken = () => {
 
 export const getAccessToken = () => accessToken
 
-const requestNewAccessToken = async (): Promise<string | null> => {
+const performRefreshRequest = async (): Promise<string | null> => {
   try {
     const response = await refreshClient.post<LoginResponse>('/api/auth/refresh')
     const newAccessToken = response.data.accessToken
@@ -45,6 +45,15 @@ const requestNewAccessToken = async (): Promise<string | null> => {
     clearAccessToken()
     return null
   }
+}
+
+const requestNewAccessToken = async (): Promise<string | null> => {
+  if (!refreshPromise) {
+    refreshPromise = performRefreshRequest().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
 }
 
 export const ensureWebSession = async (): Promise<boolean> => {
@@ -81,13 +90,7 @@ apiClient.interceptors.response.use(
 
     originalRequest._retry = true
 
-    if (!refreshPromise) {
-      refreshPromise = requestNewAccessToken().finally(() => {
-        refreshPromise = null
-      })
-    }
-
-    const newAccessToken = await refreshPromise
+    const newAccessToken = await requestNewAccessToken()
     if (!newAccessToken) {
       // Refresh 실패 시 로그인 페이지로 이동하거나 세션 초기화
       window.location.href = '/' 

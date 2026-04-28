@@ -669,7 +669,13 @@ export default function App() {
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const [realtimeSummary, setRealtimeSummary] = useState<RealtimeSummaryResponse | null>(null)
+  const realtimeSummaryRef = useRef<RealtimeSummaryResponse | null>(null)
+  const isRealtimeRiskUsersSyncInFlightRef = useRef(false)
   const isRealtimeTab = activeTab === 'dashboard' || activeTab === 'live' || activeTab === 'alerts'
+
+  useEffect(() => {
+    realtimeSummaryRef.current = realtimeSummary
+  }, [realtimeSummary])
 
   useEffect(() => {
     if (!isLoggedIn || !isRealtimeTab) {
@@ -705,11 +711,46 @@ export default function App() {
             accessToken,
             signal: abortController.signal,
             onSummary: (summary) => {
-              if (!isCancelled) {
-                setRealtimeSummary((previous) => (
-                  isRealtimeSummaryEqual(previous, summary) ? previous : summary
-                ))
+              if (isCancelled) {
+                return
               }
+
+              const previousSummary = realtimeSummaryRef.current
+              if (isRealtimeSummaryEqual(previousSummary, summary)) {
+                return
+              }
+
+              setRealtimeSummary(summary)
+              realtimeSummaryRef.current = summary
+
+              const activeSessionCountChanged =
+                previousSummary === null
+                || previousSummary.activeSessionCount !== summary.activeSessionCount
+
+              if (
+                !activeSessionCountChanged
+                || activeTab !== 'live'
+                || !organizationId
+                || isRealtimeRiskUsersSyncInFlightRef.current
+              ) {
+                return
+              }
+
+              isRealtimeRiskUsersSyncInFlightRef.current = true
+              void fetchOrganizationRiskUsers(organizationId)
+                .then((response) => {
+                  if (!isCancelled) {
+                    setRiskUsersState(mapRiskUsersResponseToWidgetRows(response))
+                  }
+                })
+                .catch((error: unknown) => {
+                  if (!isCancelled) {
+                    console.error('Failed to sync realtime monitoring list:', error)
+                  }
+                })
+                .finally(() => {
+                  isRealtimeRiskUsersSyncInFlightRef.current = false
+                })
             },
             onAlert: (notification) => {
               if (isCancelled) {
@@ -757,7 +798,7 @@ export default function App() {
       abortController?.abort()
       window.removeEventListener('pagehide', handlePageHide)
     }
-  }, [isLoggedIn, isRealtimeTab])
+  }, [isLoggedIn, isRealtimeTab, activeTab, organizationId])
 
   useEffect(() => {
     if (!isLoggedIn) {
