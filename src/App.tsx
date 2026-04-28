@@ -137,9 +137,12 @@ function UserDetailModal({ userName, riskUsers: _riskUsers, alertItems, sessionR
   const [filterDays, setFilterDays] = useState<number | null>(7)
   
 
-  const filterByDate = (date: string) => { 
-    if (!filterDays) return true; 
-    return (new Date(todayStr).getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
+  const filterByDate = (date: string) => {
+    if (!filterDays) return true
+    const today = parseDateLike(todayStr)
+    const target = parseDateLike(date)
+    if (!today || !target) return false
+    return (today.getTime() - target.getTime()) / 86400000 <= filterDays
   }
   
   const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date))
@@ -271,8 +274,41 @@ function toInputDateString(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+function parseDateLike(value: string | null | undefined) {
+  if (!value || typeof value !== 'string') {
+    return null
+  }
+
+  const normalized = value.trim()
+  if (!normalized) {
+    return null
+  }
+
+  const match = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/
+  )
+  if (match) {
+    const year = Number(match[1])
+    const month = Number(match[2])
+    const day = Number(match[3])
+    const hour = Number(match[4] ?? '0')
+    const minute = Number(match[5] ?? '0')
+    const second = Number(match[6] ?? '0')
+    return new Date(year, month - 1, day, hour, minute, second)
+  }
+
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+  return parsed
+}
+
 function formatHourLabel(dateTime: string) {
-  const date = new Date(dateTime)
+  const date = parseDateLike(dateTime)
+  if (!date) {
+    return '-'
+  }
   return `${String(date.getHours()).padStart(2, '0')}:00`
 }
 
@@ -281,8 +317,31 @@ function formatBucketLabel(
   bucketEnd: string,
   statType: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 ) {
-  const start = new Date(bucketStart)
-  const end = new Date(bucketEnd)
+  const start = parseDateLike(bucketStart)
+  const end = parseDateLike(bucketEnd)
+  if (!start || !end) {
+    return '-'
+  }
+
+  if (statType === 'hourly') {
+    return `${start.getMonth() + 1}/${start.getDate()} ${String(start.getHours()).padStart(2, '0')}:00`
+  }
+  if (statType === 'daily') {
+    return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+  }
+  return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}~${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+}
+
+function formatBucketTickLabel(
+  bucketStart: string,
+  bucketEnd: string,
+  statType: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+) {
+  const start = parseDateLike(bucketStart)
+  const end = parseDateLike(bucketEnd)
+  if (!start || !end) {
+    return '-'
+  }
 
   if (statType === 'hourly') {
     return `${start.getMonth() + 1}/${start.getDate()} ${String(start.getHours()).padStart(2, '0')}:00`
@@ -290,13 +349,7 @@ function formatBucketLabel(
   if (statType === 'daily') {
     return `${start.getMonth() + 1}/${start.getDate()}`
   }
-  if (statType === 'weekly') {
-    return `${start.getMonth() + 1}/${start.getDate()}~${end.getMonth() + 1}/${end.getDate()}`
-  }
-  if (statType === 'monthly') {
-    return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
-  }
-  return `${start.getFullYear()}`
+  return `${start.getMonth() + 1}/${start.getDate()}~${end.getMonth() + 1}/${end.getDate()}`
 }
 
 function formatMemberRole(role: string | null | undefined) {
@@ -310,27 +363,24 @@ function formatMemberRole(role: string | null | undefined) {
 }
 
 function formatMemberCreatedAt(createdAt: string | null | undefined) {
-  if (!createdAt) {
-    return '-'
-  }
-  const parsed = new Date(createdAt)
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseDateLike(createdAt)
+  if (!parsed) {
     return '-'
   }
   return parsed.toLocaleString('ko-KR')
 }
 
 function formatSessionDate(dateTime: string) {
-  const parsed = new Date(dateTime)
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseDateLike(dateTime)
+  if (!parsed) {
     return '-'
   }
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
 }
 
 function formatSessionTime(dateTime: string) {
-  const parsed = new Date(dateTime)
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseDateLike(dateTime)
+  if (!parsed) {
     return '-'
   }
   return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
@@ -402,12 +452,14 @@ function mapNotificationToAlertItem(
 
 function getAlertTimestamp(item: AlertItem): number {
   if (item.occurredAt) {
-    const occurredAtTime = new Date(item.occurredAt).getTime()
+    const occurredAtDate = parseDateLike(item.occurredAt)
+    const occurredAtTime = occurredAtDate ? occurredAtDate.getTime() : Number.NaN
     if (!Number.isNaN(occurredAtTime)) {
       return occurredAtTime
     }
   }
-  const fallbackTime = new Date(`${item.date}T${item.time}:00`).getTime()
+  const fallbackDate = parseDateLike(`${item.date}T${item.time}:00`)
+  const fallbackTime = fallbackDate ? fallbackDate.getTime() : Number.NaN
   return Number.isNaN(fallbackTime) ? 0 : fallbackTime
 }
 
@@ -1167,6 +1219,7 @@ export default function App() {
 
   const analysisChartData = analysisSeries.map((row) => ({
     xKey: row.bucketStart,
+    axisLabel: formatBucketTickLabel(row.bucketStart, row.bucketEnd, statType),
     label: formatBucketLabel(row.bucketStart, row.bucketEnd, statType),
     l1: row.drowsyCount,
     l2: row.sleepCount,
@@ -1221,9 +1274,16 @@ export default function App() {
   const activeL1AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L1').length
   const activeL2AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L2').length
   const filteredAlertItems = alertItems.filter((item) => {
-    const occurredAt = new Date(item.date).getTime()
-    const start = new Date(alertFilterStartDate).getTime()
-    const end = new Date(alertFilterEndDate).getTime()
+    const occurredAtDate = parseDateLike(item.date)
+    const startDate = parseDateLike(alertFilterStartDate)
+    const endDate = parseDateLike(alertFilterEndDate)
+    if (!occurredAtDate || !startDate || !endDate) {
+      return false
+    }
+
+    const occurredAt = occurredAtDate.getTime()
+    const start = startDate.getTime()
+    const end = endDate.getTime()
 
     if (Number.isNaN(occurredAt) || occurredAt < start || occurredAt > end) {
       return false
@@ -1977,7 +2037,7 @@ export default function App() {
                               tickLine={false}
                               tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
                               dy={10}
-                              tickFormatter={(_value, index) => analysisChartData[index]?.label ?? ''}
+                              tickFormatter={(_value, index) => analysisChartData[index]?.axisLabel ?? ''}
                             />
                             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
                             <Tooltip
