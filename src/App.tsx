@@ -36,6 +36,7 @@ import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
 import apiClient, { clearAccessToken, ensureWebSession, getAccessToken, setAccessToken } from './api/client'
+import { changeMyPassword } from './api/account'
 import {
   addOrganizationMember,
   fetchOrganizationMembers,
@@ -360,7 +361,7 @@ function mapRiskUsersResponseToWidgetRows(response: OrganizationRiskUserResponse
       name: resolvedName,
       alertCount: row.totalRiskCount,
       sessionsToday: row.totalSessionCount,
-      isOnline: true,
+      isOnline: row.isMonitoringActive,
     }
   })
 }
@@ -453,8 +454,13 @@ export default function App() {
   const [signupEmail, setSignupEmail] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signupOrgCode, setSignupOrgCode] = useState('')
+  const [accountCurrentPassword, setAccountCurrentPassword] = useState('')
+  const [accountNewPassword, setAccountNewPassword] = useState('')
+  const [accountNewPasswordConfirm, setAccountNewPasswordConfirm] = useState('')
+  const [accountOrganizationCode, setAccountOrganizationCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -594,6 +600,33 @@ export default function App() {
     } finally {
       clearAccessToken()
       setIsLoggedIn(false)
+    }
+  }
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (accountNewPassword !== accountNewPasswordConfirm) {
+      toast.error('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.')
+      return
+    }
+
+    setIsChangingPassword(true)
+    try {
+      await changeMyPassword({
+        currentPassword: accountCurrentPassword,
+        newPassword: accountNewPassword,
+        organizationCode: accountOrganizationCode.trim(),
+      })
+      toast.success('비밀번호가 변경되었습니다.')
+      setAccountCurrentPassword('')
+      setAccountNewPassword('')
+      setAccountNewPasswordConfirm('')
+      setAccountOrganizationCode('')
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '비밀번호 변경에 실패했습니다.'))
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -1997,20 +2030,65 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
                 <h3 className="text-lg font-black text-slate-900 mb-6">비밀번호 변경</h3>
-                <form onSubmit={e => { e.preventDefault(); alert('비밀번호가 변경되었습니다.'); }} className="flex flex-col gap-4">
+                <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">현재 비밀번호</label>
+                    <input
+                      type="password"
+                      placeholder="현재 비밀번호를 입력하세요"
+                      value={accountCurrentPassword}
+                      onChange={e => setAccountCurrentPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      minLength={4}
+                      maxLength={72}
+                      required
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">새 비밀번호</label>
-                    <input type="password" placeholder="새로운 비밀번호를 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                    <input
+                      type="password"
+                      placeholder="새로운 비밀번호를 입력하세요"
+                      value={accountNewPassword}
+                      onChange={e => setAccountNewPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      minLength={4}
+                      maxLength={72}
+                      required
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">비밀번호 확인</label>
-                    <input type="password" placeholder="다시 한번 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                    <input
+                      type="password"
+                      placeholder="다시 한번 입력하세요"
+                      value={accountNewPasswordConfirm}
+                      onChange={e => setAccountNewPasswordConfirm(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      minLength={4}
+                      maxLength={72}
+                      required
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">조직 코드</label>
-                    <input type="text" placeholder="인증을 위한 조직 코드를 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                    <input
+                      type="text"
+                      placeholder="인증을 위한 조직 코드를 입력하세요"
+                      value={accountOrganizationCode}
+                      onChange={e => setAccountOrganizationCode(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      maxLength={100}
+                      required
+                    />
                   </div>
-                  <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform">변경 사항 저장</button>
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword}
+                    className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform disabled:bg-slate-400 disabled:hover:translate-y-0"
+                  >
+                    {isChangingPassword ? '변경 중...' : '변경 사항 저장'}
+                  </button>
                 </form>
               </div>
 
