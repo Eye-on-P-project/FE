@@ -111,7 +111,7 @@ export default function SystemAdminApp() {
                       <th className="px-6 py-4 font-bold">요청 일시</th>
                       <th className="px-6 py-4 font-bold">상호명 (대표자)</th>
                       <th className="px-6 py-4 font-bold">사업자번호</th>
-                      <th className="px-6 py-4 font-bold">진위확인</th>
+                      <th className="px-6 py-4 font-bold">사업자 등록 확인</th>
                       <th className="px-6 py-4 font-bold w-12"></th>
                     </tr>
                   </thead>
@@ -190,7 +190,7 @@ export default function SystemAdminApp() {
                         {/* 국세청 응답 결과 강조 표시 */}
                         <div className={`p-4 rounded-xl border flex items-center justify-between mb-2 ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
                           <div>
-                            <p className={`text-xs font-bold mb-1 ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'text-emerald-600' : 'text-rose-600'}`}>진위확인 결과</p>
+                            <p className={`text-xs font-bold mb-1 ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'text-emerald-600' : 'text-rose-600'}`}>사업자 등록 확인 결과</p>
                             <strong className={`text-base ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'text-emerald-700' : 'text-rose-700'}`}>
                               {selectedRequest.nts_valid_msg || '미확인'} 
                               {selectedRequest.nts_status && ` (${selectedRequest.nts_status})`}
@@ -335,7 +335,7 @@ export default function SystemAdminApp() {
                     onChange={(e) => setRejectReasons({...rejectReasons, infoMismatch: e.target.checked})}
                     className="w-5 h-5 accent-indigo-600 rounded"
                   />
-                  <span className="font-medium text-slate-700">국세청 사업자 정보 불일치</span>
+                  <span className="font-medium text-slate-700">사업자 등록 정보 불일치</span>
                 </label>
                 
                 <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50/50">
