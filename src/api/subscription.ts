@@ -1,4 +1,4 @@
-import apiClient from './client';
+// import apiClient from './client'; // TODO: 실제 API 연동 시 주석 해제
 import type { SubscriptionPlan, SubscriptionInfo, ChangeSubscriptionRequest, ChangeSubscriptionResponse } from '../types/subscription';
 
 const SUBSCRIPTION_STORAGE_KEY = 'eyeon_subscription';
