@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Shield, Building2, Check, FileText, ArrowLeft, Upload, Loader2, ListChecks } from 'lucide-react';
+// TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리
+// import { Shield, Building2, Check, FileText, ArrowLeft, Upload, Loader2, ListChecks } from 'lucide-react';
+import { Shield, Building2, Check, FileText, ArrowLeft, Loader2, ListChecks } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
 
 export default function SignupApp() {
@@ -21,18 +23,20 @@ export default function SignupApp() {
     password: '',
   });
 
-  const [attachment, setAttachment] = useState<File | null>(null);
+  // TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리
+  // const [attachment, setAttachment] = useState<File | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setAttachment(e.target.files[0]);
-    }
-  };
+  // TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리
+  // const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   if (e.target.files && e.target.files.length > 0) {
+  //     setAttachment(e.target.files[0]);
+  //   }
+  // };
 
   const handleVerify = async () => {
     if (!formData.b_no || !formData.start_dt || !formData.p_nm) {
@@ -57,8 +61,11 @@ export default function SignupApp() {
       toast.error('사업자 등록 확인을 먼저 완료해주세요.');
       return;
     }
-    if (!formData.email || !formData.password || !attachment) {
-      toast.error('이메일, 비밀번호, 첨부파일을 모두 입력해주세요.');
+    // TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리 (attachment 검증 및 메시지 수정)
+    // if (!formData.email || !formData.password || !attachment) {
+    //   toast.error('이메일, 비밀번호, 첨부파일을 모두 입력해주세요.');
+    if (!formData.email || !formData.password) {
+      toast.error('이메일과 비밀번호를 모두 입력해주세요.');
       return;
     }
 
@@ -256,12 +263,17 @@ export default function SignupApp() {
           <div className={`space-y-8 ${step === 2 ? 'block animate-in fade-in slide-in-from-right-4 duration-500' : 'hidden'}`}>
             <div>
               <h2 className="text-xl font-black text-slate-900 mb-1 flex items-center gap-2">
-                <FileText className="text-blue-600" size={20} /> 첨부파일 및 계정 정보
+                {/* TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 텍스트 수정 */}
+                {/* <FileText className="text-blue-600" size={20} /> 첨부파일 및 계정 정보 */}
+                <FileText className="text-blue-600" size={20} /> 계정 정보 입력
               </h2>
-              <p className="text-sm text-slate-500">사업자등록증 사본과 사용할 계정 정보를 입력해주세요.</p>
+              {/* <p className="text-sm text-slate-500">사업자등록증 사본과 사용할 계정 정보를 입력해주세요.</p> */}
+              <p className="text-sm text-slate-500">사용할 계정 정보를 입력해주세요.</p>
             </div>
 
             <div className="space-y-6">
+              {/* TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리 */}
+              {/*
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700">사업자등록증 사본 업로드 <span className="text-red-500">*</span></label>
                 <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 hover:border-blue-500 hover:bg-blue-50/50 transition-colors cursor-pointer relative flex flex-col items-center justify-center gap-2">
@@ -286,6 +298,7 @@ export default function SignupApp() {
                   </div>
                 </div>
               </div>
+              */}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5">
@@ -324,7 +337,9 @@ export default function SignupApp() {
               <button 
                 type="button"
                 onClick={() => setStep(3)}
-                disabled={!attachment || !formData.email || !formData.password}
+                // TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리
+                // disabled={!attachment || !formData.email || !formData.password}
+                disabled={!formData.email || !formData.password}
                 className="flex-[2] py-4 rounded-xl bg-blue-600 text-white font-black text-lg hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 정보 검토하기 <ArrowLeft className="rotate-180" size={20} />
@@ -355,9 +370,11 @@ export default function SignupApp() {
               </div>
               
               <div>
-                <h3 className="text-sm font-bold text-blue-600 border-b border-blue-100 pb-2 mb-3 mt-6">첨부파일 및 계정 정보</h3>
+                {/* TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리 및 텍스트 수정 */}
+                {/* <h3 className="text-sm font-bold text-blue-600 border-b border-blue-100 pb-2 mb-3 mt-6">첨부파일 및 계정 정보</h3> */}
+                <h3 className="text-sm font-bold text-blue-600 border-b border-blue-100 pb-2 mb-3 mt-6">계정 정보</h3>
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center text-sm md:text-base"><span className="text-slate-500 font-medium">첨부파일</span><strong className="text-slate-900">{attachment?.name}</strong></div>
+                  {/* <div className="flex justify-between items-center text-sm md:text-base"><span className="text-slate-500 font-medium">첨부파일</span><strong className="text-slate-900">{attachment?.name}</strong></div> */}
                   <div className="flex justify-between items-center text-sm md:text-base"><span className="text-slate-500 font-medium">관리자 이메일</span><strong className="text-slate-900">{formData.email}</strong></div>
                 </div>
               </div>
