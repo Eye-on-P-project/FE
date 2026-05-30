@@ -269,7 +269,7 @@ export default function SystemAdminApp() {
                   <div className="flex-1 flex flex-col gap-8">
                     <section>
                       <h4 className="text-lg font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100">
-                        신청자 및 시스템 정보
+                        신청자 정보
                       </h4>
                       <div className="bg-white rounded-xl p-5 space-y-4 border border-slate-200 shadow-sm">
                         <div className="flex justify-between items-center text-sm md:text-base">
@@ -280,10 +280,7 @@ export default function SystemAdminApp() {
                           <span className="text-slate-500 font-medium">요청 일시</span>
                           <strong className="text-slate-900">{new Date(selectedRequest.createdAt).toLocaleString('ko-KR')}</strong>
                         </div>
-                        <div className="flex justify-between items-center text-sm md:text-base">
-                          <span className="text-slate-500 font-medium">시스템 ID</span>
-                          <strong className="font-mono text-slate-500 text-xs">{selectedRequest.id}</strong>
-                        </div>
+
                       </div>
                     </section>
 
