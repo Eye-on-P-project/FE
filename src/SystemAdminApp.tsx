@@ -72,9 +72,6 @@ export default function SystemAdminApp() {
             <Building2 size={20} />
             조직 가입 승인
           </button>
-          <a href="/" className="flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl font-medium transition-colors w-full text-left mt-auto">
-            일반 서비스로 이동
-          </a>
         </nav>
       </aside>
 
