@@ -39,8 +39,8 @@ export default function SignupApp() {
   // };
 
   const handleVerify = async () => {
-    if (!formData.b_no || !formData.start_dt || !formData.p_nm) {
-      toast.error('필수 항목(사업자등록번호, 개업일자, 대표자성명)을 입력해주세요.');
+    if (!formData.b_no || !formData.start_dt || !formData.p_nm || !formData.b_nm || !formData.corp_no) {
+      toast.error('필수 항목(사업자등록번호, 상호명, 개업일자, 대표자성명, 법인등록번호)을 입력해주세요.');
       return;
     }
 
@@ -180,7 +180,7 @@ export default function SignupApp() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700">상호명 <span className="text-slate-400 font-normal">(선택)</span></label>
+                <label className="text-sm font-bold text-slate-700">상호명 <span className="text-red-500">*</span></label>
                 <input 
                   type="text" 
                   name="b_nm" 
@@ -204,7 +204,7 @@ export default function SignupApp() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700">법인등록번호 <span className="text-slate-400 font-normal">(선택)</span></label>
+                <label className="text-sm font-bold text-slate-700">법인등록번호 <span className="text-red-500">*</span></label>
                 <input 
                   type="text" 
                   name="corp_no" 
