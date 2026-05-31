@@ -13,8 +13,10 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  Sparkles,
   SquarePen,
   UserCircle,
+  Zap,
 } from 'lucide-react'
 import {
   Responsive,
@@ -496,23 +498,22 @@ function applyRealtimeNotification(previous: AlertItem[], notification: Monitori
   return mergeAlertItems(closedPrevious, [nextAlert])
 }
 
+import { getCurrentSubscription } from './api/subscription'
+import type { SubscriptionInfo } from './types/subscription'
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAuthInitializing, setIsAuthInitializing] = useState(true)
-  const [isLoginMode, setIsLoginMode] = useState(true)
   const [operatorCode, setOperatorCode] = useState('')
   const [password, setPassword] = useState('')
 
-  const [signupEmail, setSignupEmail] = useState('')
-  const [signupPassword, setSignupPassword] = useState('')
-  const [signupOrgCode, setSignupOrgCode] = useState('')
   const [accountCurrentPassword, setAccountCurrentPassword] = useState('')
   const [accountNewPassword, setAccountNewPassword] = useState('')
   const [accountNewPasswordConfirm, setAccountNewPasswordConfirm] = useState('')
   const [accountOrganizationCode, setAccountOrganizationCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isRegistering, setIsRegistering] = useState(false)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -524,6 +525,16 @@ export default function App() {
       }
       setIsLoggedIn(hasValidSession)
       setIsAuthInitializing(false)
+      
+      // Fetch subscription if logged in
+      if (hasValidSession) {
+        try {
+          const subData = await getCurrentSubscription()
+          setSubscription(subData)
+        } catch (error) {
+          console.error('Failed to fetch subscription:', error)
+        }
+      }
     }
 
     restoreWebSession()
@@ -605,40 +616,6 @@ export default function App() {
       toast.error(errorMsg)
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsRegistering(true)
-    try {
-      await apiClient.post('/api/auth/signup', {
-        email: signupEmail,
-        password: signupPassword,
-        organizationCode: signupOrgCode,
-        name: '새로운 구성원',
-        nickname: signupEmail.split('@')[0],
-        age: 25,
-        gender: 'MALE'
-      })
-      
-      toast.success('회원가입이 완료되었습니다! 로그인해 주세요.')
-      setIsLoginMode(true)
-      setSignupEmail('')
-      setSignupPassword('')
-      setSignupOrgCode('')
-      setOperatorCode(signupEmail) 
-      setPassword('')
-    } catch (error: any) {
-      console.error('Register error:', error)
-      const errorMsg = error.response?.data?.message || '회원가입에 실패했습니다. 입력 정보를 확인해 주세요.'
-      if (error.response?.status === 409) {
-        toast.error('이미 존재하는 이메일 또는 조직 코드 오류입니다.')
-      } else {
-        toast.error(errorMsg)
-      }
-    } finally {
-      setIsRegistering(false)
     }
   }
 
@@ -1168,7 +1145,7 @@ export default function App() {
   }, [isLoggedIn, activeTab, organizationId, statType, statStartDate, statEndDate])
 
   useEffect(() => {
-    if (!isLoggedIn || activeTab !== 'members') {
+    if (!isLoggedIn || (activeTab !== 'members' && activeTab !== 'account')) {
       return
     }
 
@@ -1361,36 +1338,21 @@ export default function App() {
           <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Secure Access Portal</p>
           
           <div className="flex w-full bg-slate-100 rounded-xl p-1 mb-8 mt-6">
-            <button type="button" onClick={() => setIsLoginMode(true)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>로그인</button>
-            <button type="button" onClick={() => setIsLoginMode(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>회원가입</button>
+            <button type="button" className="flex-1 py-2 text-sm font-bold rounded-lg transition-all bg-white text-slate-900 shadow-sm">로그인</button>
+            <button type="button" onClick={() => window.location.href = '/signup'} className="flex-1 py-2 text-sm font-bold rounded-lg transition-all text-slate-500 hover:text-slate-900">회원가입</button>
           </div>
           
-          {isLoginMode ? (
-            <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
-              <input type="email" placeholder="이메일" value={operatorCode || ''} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="password" placeholder="비밀번호" value={password || ''} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <button 
-                type="submit" 
-                disabled={isLoading}
-                className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-all disabled:bg-slate-300"
-              >
-                {isLoading ? '연결 중...' : '로그인'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleRegister} className="w-full flex flex-col gap-4">
-              <input type="text" placeholder="조직 코드 (예: ORG001)" value={signupOrgCode || ''} onChange={e => setSignupOrgCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="email" placeholder="사용할 이메일" value={signupEmail || ''} onChange={e => setSignupEmail(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="password" placeholder="사용할 비밀번호 (4자 이상)" value={signupPassword || ''} onChange={e => setSignupPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" minLength={4} required />
-              <button 
-                type="submit" 
-                disabled={isRegistering}
-                className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-all disabled:bg-slate-500"
-              >
-                {isRegistering ? '가입 처리 중...' : '회원가입'}
-              </button>
-            </form>
-          )}
+          <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
+            <input type="email" placeholder="이메일" value={operatorCode || ''} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+            <input type="password" placeholder="비밀번호" value={password || ''} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-all disabled:bg-slate-300"
+            >
+              {isLoading ? '연결 중...' : '로그인'}
+            </button>
+          </form>
         </div>
       </div>
     )
@@ -1424,7 +1386,23 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="mt-auto">
+        <div className="mt-auto flex flex-col gap-4">
+          {subscription && (
+            <div className={`mx-4 px-3 py-2 rounded-xl border flex items-center justify-between shadow-sm ${
+              subscription.plan === 'PRO' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
+              subscription.plan === 'PLUS' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+              'bg-slate-500/10 border-slate-500/20 text-slate-400'
+            }`}>
+              <div className="flex items-center gap-2">
+                {subscription.plan === 'PRO' ? <Zap size={14} className="fill-purple-400" /> : 
+                 subscription.plan === 'PLUS' ? <Sparkles size={14} /> : 
+                 <ShieldAlert size={14} />}
+                <span className="text-[10px] font-black uppercase tracking-wider">{subscription.plan} Plan</span>
+              </div>
+              <span className="text-[10px] font-bold opacity-60">Active</span>
+            </div>
+          )}
+
           <button onClick={() => setActiveTab('account')} className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-medium text-left border border-slate-800 ${activeTab === 'account' ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-900 hover:bg-white/5 hover:text-slate-100'}`}>
             <div className="grid w-8 h-8 place-items-center rounded-lg bg-slate-800 text-slate-300">
               <UserCircle size={18} />
@@ -2128,7 +2106,64 @@ export default function App() {
               <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">계정 설정</h1>
             </header>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <div className="flex flex-col gap-6">
+                {/* Subscription Management Section */}
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm flex flex-col">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-black text-slate-900 m-0">구독 관리</h3>
+                  {subscription && (
+                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                      subscription.plan === 'PRO' ? 'bg-purple-100 text-purple-700' :
+                      subscription.plan === 'PLUS' ? 'bg-blue-100 text-blue-700' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {subscription.plan}
+                    </span>
+                  )}
+                </div>
+                
+                <div className="space-y-4 mb-8">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">조직원 사용량</span>
+                    <strong className="text-slate-900">{organizationMembers.length} / {subscription?.membersLimit ?? '-'}명</strong>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">데이터 열람 기간</span>
+                    <strong className="text-slate-900">{subscription?.retentionPeriod ?? '-'}</strong>
+                  </div>
+                  {subscription?.plan !== 'FREE' && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 font-medium">다음 결제 일</span>
+                      <strong className="text-slate-900">2026. 06. 28</strong>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">상태</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
+                      <Check size={14} strokeWidth={3} /> 활성 상태
+                    </span>
+                  </div>
+                </div>
+
+                <button 
+                  type="button" 
+                  onClick={() => window.location.href = '/subscription'}
+                  className="w-full py-4 rounded-xl bg-blue-600 text-white font-black text-sm hover:bg-blue-700 transition-all shadow-md shadow-blue-600/20 flex items-center justify-center gap-2"
+                >
+                  <Sparkles size={16} /> 구독 플랜 변경 및 관리
+                </button>
+              </div>
+
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                  <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
+                  <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
+                  <button type="button" onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
+                    <LogOut size={18} /> 안전하게 로그아웃
+                  </button>
+                </div>
+              </div>
+
               <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
                 <h3 className="text-lg font-black text-slate-900 mb-6">비밀번호 변경</h3>
                 <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
@@ -2193,13 +2228,6 @@ export default function App() {
                 </form>
               </div>
 
-              <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit">
-                <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
-                <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
-                <button type="button" onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
-                  <LogOut size={18} /> 안전하게 로그아웃
-                </button>
-              </div>
             </div>
           </div>
         )}
