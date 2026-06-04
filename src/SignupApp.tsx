@@ -1,8 +1,52 @@
 import { useState } from 'react';
+import axios from 'axios';
 // TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리
 // import { Shield, Building2, Check, FileText, ArrowLeft, Upload, Loader2, ListChecks } from 'lucide-react';
 import { Shield, Building2, Check, FileText, ArrowLeft, Loader2, ListChecks } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
+import { signupOrganizationAdmin } from './api/auth';
+
+function toIsoDate(yyyymmdd: string) {
+  const trimmed = yyyymmdd.trim();
+  if (!/^\d{8}$/.test(trimmed)) {
+    return null;
+  }
+
+  const year = Number(trimmed.slice(0, 4));
+  const month = Number(trimmed.slice(4, 6));
+  const day = Number(trimmed.slice(6, 8));
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`;
+}
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
+  if (axios.isAxiosError<{ message?: string; errors?: { field: string; reason: string }[] }>(error)) {
+    const fieldError = error.response?.data?.errors?.[0]?.reason;
+    if (fieldError) {
+      return fieldError;
+    }
+
+    const message = error.response?.data?.message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
+  }
+  return fallbackMessage;
+}
 
 export default function SignupApp() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -61,6 +105,19 @@ export default function SignupApp() {
       toast.error('사업자 등록 확인을 먼저 완료해주세요.');
       return;
     }
+    const establishedAt = toIsoDate(formData.start_dt);
+    if (!establishedAt) {
+      toast.error('개업일자는 YYYYMMDD 형식의 올바른 날짜여야 합니다.');
+      setStep(1);
+      return;
+    }
+
+    if (formData.password.length < 4) {
+      toast.error('비밀번호는 4자 이상 입력해주세요.');
+      setStep(2);
+      return;
+    }
+
     // TODO: 사업자등록증 사본 업로드 기능 제외로 인한 임시 주석 처리 (attachment 검증 및 메시지 수정)
     // if (!formData.email || !formData.password || !attachment) {
     //   toast.error('이메일, 비밀번호, 첨부파일을 모두 입력해주세요.');
@@ -70,15 +127,30 @@ export default function SignupApp() {
     }
 
     setIsSubmitting(true);
-    // Mock Signup API Call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    setIsSubmitting(false);
-    toast.success('회원가입 신청이 완료되었습니다. 관리자 승인 후 이용 가능합니다.');
-    
-    setTimeout(() => {
-      window.location.href = '/';
-    }, 2000);
+    try {
+      await signupOrganizationAdmin({
+        email: formData.email.trim(),
+        password: formData.password,
+        organizationName: formData.b_nm.trim(),
+        businessmanNum: formData.b_no.trim(),
+        establishedAt,
+        representativeName: formData.p_nm.trim(),
+        corporateNum: formData.corp_no.trim(),
+        businessName: formData.b_nm.trim(),
+        coRepresentativeName: optionalText(formData.p_nm2),
+        businessAddress: optionalText(formData.b_adr),
+      });
+
+      toast.success('회원가입 신청이 완료되었습니다. 관리자 승인 후 이용 가능합니다.');
+      
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '회원가입 신청에 실패했습니다.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

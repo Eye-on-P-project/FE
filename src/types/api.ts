@@ -9,6 +9,26 @@ export interface LoginResponse {
   role: UserRole;
 }
 
+export interface SignupOrganizationAdminRequest {
+  email: string;
+  password: string;
+  organizationName: string;
+  businessmanNum: string;
+  establishedAt: string;
+  representativeName: string;
+  corporateNum: string;
+  businessName: string;
+  coRepresentativeName?: string;
+  businessAddress?: string;
+}
+
+export interface SignupResponse {
+  userId: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  role: UserRole;
+}
+
 export interface MeResponse {
   userId: string;
   email: string;
