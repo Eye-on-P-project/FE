@@ -14,6 +14,8 @@ const optionalText = (value: string | null | undefined) => {
   return trimmed ? trimmed : undefined
 }
 
+const signupRequestPromises = new Map<string, Promise<OrganizationSignupRequest[]>>()
+
 const mapSignupReviewResponse = (
   response: OrganizationSignupReviewResponse
 ): OrganizationSignupRequest => ({
@@ -33,16 +35,27 @@ const mapSignupReviewResponse = (
 export const fetchOrganizationSignupRequests = async (
   params?: { status?: OrganizationSignupStatus; query?: string }
 ): Promise<OrganizationSignupRequest[]> => {
-  const response = await apiClient.get<OrganizationSignupReviewResponse[]>(
+  const requestParams = {
+    status: params?.status,
+    query: optionalText(params?.query),
+  }
+  const cacheKey = JSON.stringify(requestParams)
+  const pendingRequest = signupRequestPromises.get(cacheKey)
+  if (pendingRequest) {
+    return pendingRequest
+  }
+
+  const request = apiClient.get<OrganizationSignupReviewResponse[]>(
     '/api/system-admin/organizations/signups',
-    {
-      params: {
-        status: params?.status,
-        query: optionalText(params?.query),
-      },
-    }
+    { params: requestParams }
   )
-  return response.data.map(mapSignupReviewResponse)
+    .then((response) => response.data.map(mapSignupReviewResponse))
+    .finally(() => {
+      signupRequestPromises.delete(cacheKey)
+    })
+
+  signupRequestPromises.set(cacheKey, request)
+  return request
 }
 
 export const approveOrganizationSignup = async (organizationId: string): Promise<void> => {
