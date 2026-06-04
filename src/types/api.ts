@@ -9,11 +9,32 @@ export interface LoginResponse {
   role: UserRole;
 }
 
+export interface SignupOrganizationAdminRequest {
+  email: string;
+  password: string;
+  organizationName: string;
+  businessmanNum: string;
+  establishedAt: string;
+  representativeName: string;
+  corporateNum: string;
+  businessName: string;
+  coRepresentativeName?: string;
+  businessAddress?: string;
+}
+
+export interface SignupResponse {
+  userId: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  role: UserRole;
+}
+
 export interface MeResponse {
   userId: string;
   email: string;
   role: UserRole;
-  organizationCode: string;
+  organization: string | null;
+  subscription: string | null;
   name: string;
   nickname: string;
   age: number;
@@ -55,13 +76,6 @@ export interface MonitoringNotificationPageResponse {
   items: MonitoringNotificationResponse[];
   nextCursor: string | null;
   hasNext: boolean;
-}
-
-export interface OrganizationRecordResponse {
-  id: string;
-  code: string;
-  description: string;
-  createdAt: string;
 }
 
 export interface MonitoringHourlyRiskBucket {
