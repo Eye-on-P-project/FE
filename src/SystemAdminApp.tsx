@@ -1,11 +1,41 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
 import { Shield, Building2, Check, Search, ChevronRight, AlertCircle, FileText, ArrowLeft, Download, Paperclip } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
-import { mockOrganizationSignupRequests } from './data/mockAdminData';
 import type { OrganizationSignupRequest } from './types/admin';
+import { clearAccessToken, ensureWebSession } from './api/client';
+import {
+  approveOrganizationSignup,
+  fetchOrganizationSignupRequests,
+  rejectOrganizationSignup,
+} from './api/systemAdmin';
+
+const REJECT_REASON_CODES = {
+  infoMismatch: 'INFO_MISMATCH',
+  unverified: 'UNVERIFIED_REPRESENTATIVE',
+  other: 'OTHER',
+} as const;
+
+function extractApiErrorMessage(error: unknown, fallbackMessage: string) {
+  if (axios.isAxiosError<{ message?: string }>(error)) {
+    const message = error.response?.data?.message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
+  }
+  return fallbackMessage;
+}
+
+function hasBusinessVerificationResult(request: OrganizationSignupRequest) {
+  return Boolean(request.nts_valid || request.nts_valid_msg || request.nts_status);
+}
+
+function isBusinessVerificationSuccess(request: OrganizationSignupRequest) {
+  return request.nts_valid === '01' && request.nts_status === '계속사업자';
+}
 
 export default function SystemAdminApp() {
-  const [requests, setRequests] = useState<OrganizationSignupRequest[]>(mockOrganizationSignupRequests);
+  const [requests, setRequests] = useState<OrganizationSignupRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<OrganizationSignupRequest | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReasons, setRejectReasons] = useState({
@@ -15,17 +45,63 @@ export default function SystemAdminApp() {
   });
   const [rejectOtherText, setRejectOtherText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadSignupRequests = useCallback(async () => {
+    setIsLoadingRequests(true);
+    setLoadError(null);
+
+    try {
+      const session = await ensureWebSession();
+      if (!session) {
+        clearAccessToken();
+        window.location.replace('/');
+        return;
+      }
+
+      if (session.role !== 'SYSTEM_ADMIN') {
+        toast.error('시스템 관리자만 접근할 수 있습니다.');
+        window.location.replace('/');
+        return;
+      }
+
+      const nextRequests = await fetchOrganizationSignupRequests({ status: 'PENDING' });
+      setRequests(nextRequests);
+    } catch (error: unknown) {
+      const message = extractApiErrorMessage(error, '조직 가입 요청 목록을 불러오지 못했습니다.');
+      setLoadError(message);
+      toast.error(message);
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSignupRequests();
+  }, [loadSignupRequests]);
 
   const pendingRequests = requests.filter(r => r.status === 'PENDING' && (
     r.b_nm?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.p_nm.toLowerCase().includes(searchQuery.toLowerCase())
+    r.p_nm.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.email.toLowerCase().includes(searchQuery.toLowerCase())
   ));
 
-  const handleAccept = (request: OrganizationSignupRequest) => {
-    // 실제 서버 요청이 들어갈 자리입니다.
-    setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'ACCEPTED' } : r));
-    setSelectedRequest(null);
-    toast.success(`${request.b_nm || request.p_nm} 조직의 가입이 수락되었습니다.`);
+  const handleAccept = async (request: OrganizationSignupRequest) => {
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      await approveOrganizationSignup(request.id);
+      setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'ACTIVE' } : r));
+      setSelectedRequest(null);
+      toast.success(`${request.b_nm || request.p_nm} 조직의 가입이 수락되었습니다.`);
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '가입 요청 수락에 실패했습니다.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const openRejectModal = (request: OrganizationSignupRequest) => {
@@ -35,7 +111,7 @@ export default function SystemAdminApp() {
     setRejectOtherText('');
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!selectedRequest) return;
     
     const hasReason = rejectReasons.infoMismatch || rejectReasons.unverified || (rejectReasons.other && rejectOtherText.trim());
@@ -44,11 +120,33 @@ export default function SystemAdminApp() {
       return;
     }
 
-    // 실제 서버 요청이 들어갈 자리입니다.
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: 'REJECTED' } : r));
-    setIsRejectModalOpen(false);
-    setSelectedRequest(null);
-    toast.success(`${selectedRequest.b_nm || selectedRequest.p_nm} 조직의 가입이 거절되었습니다.`);
+    if (isSubmitting) return;
+
+    const reasonCodes: string[] = [];
+    if (rejectReasons.infoMismatch) {
+      reasonCodes.push(REJECT_REASON_CODES.infoMismatch);
+    }
+    if (rejectReasons.unverified) {
+      reasonCodes.push(REJECT_REASON_CODES.unverified);
+    }
+    if (rejectReasons.other) {
+      reasonCodes.push(REJECT_REASON_CODES.other);
+    }
+
+    const reasonDetail = rejectReasons.other ? rejectOtherText.trim() : undefined;
+
+    setIsSubmitting(true);
+    try {
+      await rejectOrganizationSignup(selectedRequest.id, { reasonCodes, reasonDetail });
+      setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: 'REJECTED' } : r));
+      setIsRejectModalOpen(false);
+      setSelectedRequest(null);
+      toast.success(`${selectedRequest.b_nm || selectedRequest.p_nm} 조직의 가입이 거절되었습니다.`);
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '가입 요청 거절에 실패했습니다.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -113,7 +211,28 @@ export default function SystemAdminApp() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.length > 0 ? pendingRequests.map(req => (
+                    {isLoadingRequests ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-slate-500 font-medium">
+                          조직 가입 요청을 불러오는 중입니다.
+                        </td>
+                      </tr>
+                    ) : loadError ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-slate-500 font-medium">
+                          <div className="flex flex-col items-center gap-3">
+                            <span>{loadError}</span>
+                            <button
+                              type="button"
+                              onClick={() => void loadSignupRequests()}
+                              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-colors"
+                            >
+                              다시 불러오기
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : pendingRequests.length > 0 ? pendingRequests.map(req => (
                       <tr 
                         key={req.id} 
                         onClick={() => setSelectedRequest(req)}
@@ -185,15 +304,39 @@ export default function SystemAdminApp() {
                       </h4>
                       <div className="bg-slate-50 rounded-xl p-5 space-y-4 border border-slate-100">
                         {/* 국세청 응답 결과 강조 표시 */}
-                        <div className={`p-4 rounded-xl border flex items-center justify-between mb-2 ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                        <div className={`p-4 rounded-xl border flex items-center justify-between mb-2 ${
+                          !hasBusinessVerificationResult(selectedRequest)
+                            ? 'bg-slate-50 border-slate-200'
+                            : isBusinessVerificationSuccess(selectedRequest)
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : 'bg-rose-50 border-rose-200'
+                        }`}>
                           <div>
-                            <p className={`text-xs font-bold mb-1 ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'text-emerald-600' : 'text-rose-600'}`}>사업자 등록 확인 결과</p>
-                            <strong className={`text-base ${selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                              {selectedRequest.nts_valid_msg || '미확인'} 
+                            <p className={`text-xs font-bold mb-1 ${
+                              !hasBusinessVerificationResult(selectedRequest)
+                                ? 'text-slate-500'
+                                : isBusinessVerificationSuccess(selectedRequest)
+                                  ? 'text-emerald-600'
+                                  : 'text-rose-600'
+                            }`}>사업자 등록 확인 결과</p>
+                            <strong className={`text-base ${
+                              !hasBusinessVerificationResult(selectedRequest)
+                                ? 'text-slate-700'
+                                : isBusinessVerificationSuccess(selectedRequest)
+                                  ? 'text-emerald-700'
+                                  : 'text-rose-700'
+                            }`}>
+                              {hasBusinessVerificationResult(selectedRequest)
+                                ? selectedRequest.nts_valid_msg || '미확인'
+                                : '서버 응답에 진위확인 결과 없음'}
                               {selectedRequest.nts_status && ` (${selectedRequest.nts_status})`}
                             </strong>
                           </div>
-                          {selectedRequest.nts_valid === '01' && selectedRequest.nts_status === '계속사업자' ? (
+                          {!hasBusinessVerificationResult(selectedRequest) ? (
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                              <FileText size={20} strokeWidth={3} />
+                            </div>
+                          ) : isBusinessVerificationSuccess(selectedRequest) ? (
                             <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
                               <Check size={20} strokeWidth={3} />
                             </div>
@@ -217,10 +360,10 @@ export default function SystemAdminApp() {
                           <strong className="text-slate-900">{selectedRequest.p_nm}{selectedRequest.p_nm2 && `, ${selectedRequest.p_nm2}`}</strong>
                         </div>
                         {selectedRequest.b_adr && (
-                          <div className="flex justify-between items-center text-sm md:text-base">
-                            <span className="text-slate-500 font-medium">사업장주소</span>
-                            <strong className="text-slate-900 text-right max-w-[60%]">{selectedRequest.b_adr}</strong>
-                          </div>
+                        <div className="flex justify-between items-center text-sm md:text-base">
+                          <span className="text-slate-500 font-medium">사업장주소</span>
+                          <strong className="text-slate-900 text-right max-w-[60%]">{selectedRequest.b_adr}</strong>
+                        </div>
                         )}
                         {selectedRequest.corp_no && (
                           <div className="flex justify-between items-center text-sm md:text-base">
@@ -284,15 +427,17 @@ export default function SystemAdminApp() {
                     <div className="mt-auto bg-slate-50 rounded-xl p-6 border border-slate-200 flex gap-4">
                       <button 
                         onClick={() => openRejectModal(selectedRequest)}
-                        className="flex-1 py-4 px-6 rounded-xl border-2 border-red-200 text-red-600 font-black text-lg hover:bg-red-50 hover:border-red-300 transition-colors shadow-sm"
+                        disabled={isSubmitting}
+                        className="flex-1 py-4 px-6 rounded-xl border-2 border-red-200 text-red-600 font-black text-lg hover:bg-red-50 hover:border-red-300 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         가입 거부
                       </button>
                       <button 
                         onClick={() => handleAccept(selectedRequest)}
-                        className="flex-[2] py-4 px-6 rounded-xl bg-indigo-600 text-white font-black text-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/30 flex justify-center items-center gap-2"
+                        disabled={isSubmitting}
+                        className="flex-[2] py-4 px-6 rounded-xl bg-indigo-600 text-white font-black text-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/30 flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        <Check size={24} strokeWidth={3} /> 수락 및 활성화
+                        <Check size={24} strokeWidth={3} /> {isSubmitting ? '처리 중...' : '수락 및 활성화'}
                       </button>
                     </div>
                   </div>
@@ -370,15 +515,17 @@ export default function SystemAdminApp() {
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3 justify-end">
               <button 
                 onClick={() => setIsRejectModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl text-slate-600 font-bold hover:bg-slate-200 transition-colors"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 rounded-xl text-slate-600 font-bold hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 취소
               </button>
               <button 
                 onClick={handleReject}
-                className="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 shadow-md shadow-red-600/20 transition-colors"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 shadow-md shadow-red-600/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                거부 처리 확정
+                {isSubmitting ? '처리 중...' : '거부 처리 확정'}
               </button>
             </div>
           </div>

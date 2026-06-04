@@ -1,4 +1,28 @@
-export type OrganizationSignupStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED';
+export type OrganizationSignupStatus = 'PENDING' | 'ACTIVE' | 'REJECTED';
+
+export interface OrganizationSignupReviewResponse {
+  organizationId: string;
+  organizationCode: string | null;
+  organizationName: string | null;
+  businessName: string | null;
+  businessmanNum: string | null;
+  establishedAt: string | null;
+  representativeName: string | null;
+  coRepresentativeName: string | null;
+  corporateNum: string | null;
+  businessAddress: string | null;
+  status: OrganizationSignupStatus;
+  subscription: string | null;
+  requesterEmail: string | null;
+  rejectReasonCodes: string | null;
+  rejectReasonDetail: string | null;
+  createdAt: string;
+}
+
+export interface RejectOrganizationSignupPayload {
+  reasonCodes: string[];
+  reasonDetail?: string;
+}
 
 export interface OrganizationSignupRequest {
   id: string;

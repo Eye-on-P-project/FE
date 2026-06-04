@@ -1,16 +1,18 @@
 // Swagger 설명서 기반의 API 데이터 타입 정의
 
+export type UserRole = 'ADMIN' | 'SYSTEM_ADMIN' | 'USER';
+
 export interface LoginResponse {
   userId: string;
   accessToken: string;
   refreshToken: string | null;
-  role: 'ADMIN' | 'USER';
+  role: UserRole;
 }
 
 export interface MeResponse {
   userId: string;
   email: string;
-  role: string;
+  role: UserRole;
   organizationCode: string;
   name: string;
   nickname: string;
@@ -122,8 +124,6 @@ export interface MonitoringRecentEndedSessionResponse {
   sleepCount: number;
   totalRiskCount: number;
 }
-
-export type UserRole = 'ADMIN' | 'USER';
 
 export interface OrganizationMemberResponse {
   memberId: string;

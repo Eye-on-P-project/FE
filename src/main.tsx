@@ -1,10 +1,11 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
-import SystemAdminApp from './SystemAdminApp.tsx'
-import SignupApp from './SignupApp.tsx'
-import SubscriptionApp from './SubscriptionApp.tsx'
+
+const App = lazy(() => import('./App.tsx'))
+const SystemAdminApp = lazy(() => import('./SystemAdminApp.tsx'))
+const SignupApp = lazy(() => import('./SignupApp.tsx'))
+const SubscriptionApp = lazy(() => import('./SubscriptionApp.tsx'))
 
 const path = window.location.pathname;
 
@@ -15,6 +16,8 @@ const isSubscriptionRoute = path.startsWith('/subscription');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isSystemAdminRoute ? <SystemAdminApp /> : isSignupRoute ? <SignupApp /> : isSubscriptionRoute ? <SubscriptionApp /> : <App />}
+    <Suspense fallback={null}>
+      {isSystemAdminRoute ? <SystemAdminApp /> : isSignupRoute ? <SignupApp /> : isSubscriptionRoute ? <SubscriptionApp /> : <App />}
+    </Suspense>
   </StrictMode>,
 )

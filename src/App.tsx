@@ -83,6 +83,13 @@ const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
 const NOTIFICATION_PAGE_SIZE = 50
 const MAX_ALERT_ITEMS = 500
+const SYSTEM_ADMIN_PATH = '/admin'
+
+function redirectToSystemAdmin() {
+  if (!window.location.pathname.startsWith(SYSTEM_ADMIN_PATH)) {
+    window.location.replace(SYSTEM_ADMIN_PATH)
+  }
+}
 
 function serializeLayouts(layouts: ResponsiveLayouts) {
   return JSON.stringify(layouts)
@@ -519,10 +526,17 @@ export default function App() {
     let isMounted = true
 
     const restoreWebSession = async () => {
-      const hasValidSession = await ensureWebSession()
+      const session = await ensureWebSession()
       if (!isMounted) {
         return
       }
+
+      if (session?.role === 'SYSTEM_ADMIN') {
+        redirectToSystemAdmin()
+        return
+      }
+
+      const hasValidSession = Boolean(session)
       setIsLoggedIn(hasValidSession)
       setIsAuthInitializing(false)
       
@@ -608,6 +622,11 @@ export default function App() {
         password: password
       })
       setAccessToken(response.data.accessToken)
+      if (response.data.role === 'SYSTEM_ADMIN') {
+        toast.success('시스템 관리자 페이지로 이동합니다.')
+        redirectToSystemAdmin()
+        return
+      }
       toast.success('로그인에 성공했습니다!')
       setIsLoggedIn(true)
     } catch (error: unknown) {

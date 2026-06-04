@@ -6,7 +6,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localho
 type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
 
 let accessToken: string | null = null
-let refreshPromise: Promise<string | null> | null = null
+let refreshPromise: Promise<LoginResponse | null> | null = null
 
 const baseHeaders = {
   'Content-Type': 'application/json',
@@ -35,19 +35,19 @@ export const clearAccessToken = () => {
 
 export const getAccessToken = () => accessToken
 
-const performRefreshRequest = async (): Promise<string | null> => {
+const performRefreshRequest = async (): Promise<LoginResponse | null> => {
   try {
     const response = await refreshClient.post<LoginResponse>('/api/auth/refresh')
     const newAccessToken = response.data.accessToken
     setAccessToken(newAccessToken)
-    return newAccessToken
+    return response.data
   } catch {
     clearAccessToken()
     return null
   }
 }
 
-const requestNewAccessToken = async (): Promise<string | null> => {
+const requestWebSession = async (): Promise<LoginResponse | null> => {
   if (!refreshPromise) {
     refreshPromise = performRefreshRequest().finally(() => {
       refreshPromise = null
@@ -56,10 +56,12 @@ const requestNewAccessToken = async (): Promise<string | null> => {
   return refreshPromise
 }
 
-export const ensureWebSession = async (): Promise<boolean> => {
-  const newAccessToken = await requestNewAccessToken()
-  return Boolean(newAccessToken)
+const requestNewAccessToken = async (): Promise<string | null> => {
+  const session = await requestWebSession()
+  return session?.accessToken ?? null
 }
+
+export const ensureWebSession = async (): Promise<LoginResponse | null> => requestWebSession()
 
 apiClient.interceptors.request.use((config) => {
   if (accessToken) {
