@@ -1,17 +1,40 @@
 // Swagger 설명서 기반의 API 데이터 타입 정의
 
+export type UserRole = 'ADMIN' | 'SYSTEM_ADMIN' | 'USER';
+
 export interface LoginResponse {
   userId: string;
   accessToken: string;
   refreshToken: string | null;
-  role: 'ADMIN' | 'USER';
+  role: UserRole;
+}
+
+export interface SignupOrganizationAdminRequest {
+  email: string;
+  password: string;
+  organizationName: string;
+  businessmanNum: string;
+  establishedAt: string;
+  representativeName: string;
+  corporateNum: string;
+  businessName: string;
+  coRepresentativeName?: string;
+  businessAddress?: string;
+}
+
+export interface SignupResponse {
+  userId: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  role: UserRole;
 }
 
 export interface MeResponse {
   userId: string;
   email: string;
-  role: string;
-  organizationCode: string;
+  role: UserRole;
+  organization: string | null;
+  subscription: string | null;
   name: string;
   nickname: string;
   age: number;
@@ -53,13 +76,6 @@ export interface MonitoringNotificationPageResponse {
   items: MonitoringNotificationResponse[];
   nextCursor: string | null;
   hasNext: boolean;
-}
-
-export interface OrganizationRecordResponse {
-  id: string;
-  code: string;
-  description: string;
-  createdAt: string;
 }
 
 export interface MonitoringHourlyRiskBucket {
@@ -108,6 +124,7 @@ export interface OrganizationRiskUserResponse {
   drowsyCount: number;
   sleepCount: number;
   totalRiskCount: number;
+  isMonitoringActive: boolean;
 }
 
 export interface MonitoringRecentEndedSessionResponse {
@@ -122,8 +139,6 @@ export interface MonitoringRecentEndedSessionResponse {
   totalRiskCount: number;
 }
 
-export type UserRole = 'ADMIN' | 'USER';
-
 export interface OrganizationMemberResponse {
   memberId: string;
   organizationId: string;
@@ -133,4 +148,10 @@ export interface OrganizationMemberResponse {
   nickname: string | null;
   role: UserRole | null;
   createdAt: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+  organizationCode: string;
 }

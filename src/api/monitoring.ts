@@ -5,35 +5,21 @@ import type {
   MonitoringNotificationPageResponse,
   MonitoringNotificationResponse,
   MonitoringRecentEndedSessionResponse,
-  OrganizationRecordResponse,
   OrganizationRiskStatsResponse,
   OrganizationRiskUserResponse,
   RealtimeSummaryResponse,
   RiskStatsGranularity,
 } from '../types/api'
 
-const normalizeCode = (value: string | null | undefined) => (value ?? '').trim().toUpperCase()
-
 export const fetchMyOrganizationId = async (): Promise<string> => {
-  const [meResponse, organizationRecordsResponse] = await Promise.all([
-    apiClient.get<MeResponse>('/api/users/me'),
-    apiClient.get<OrganizationRecordResponse[]>('/api/users/dev/organizations'),
-  ])
+  const meResponse = await apiClient.get<MeResponse>('/api/users/me')
 
-  const organizationCode = normalizeCode(meResponse.data.organizationCode)
-  if (!organizationCode) {
-    throw new Error('사용자 organizationCode를 확인할 수 없습니다.')
+  const organizationId = meResponse.data.organization
+  if (!organizationId) {
+    throw new Error('사용자의 organizationId를 확인할 수 없습니다.')
   }
 
-  const matchedRecord = organizationRecordsResponse.data.find(
-    (record) => normalizeCode(record.code) === organizationCode
-  )
-
-  if (!matchedRecord) {
-    throw new Error(`조직 코드(${organizationCode})에 해당하는 organizationId를 찾지 못했습니다.`)
-  }
-
-  return matchedRecord.id
+  return organizationId
 }
 
 export const fetchDashboardHourlyRisk24h = async (): Promise<MonitoringHourlyRisk24hResponse> => {

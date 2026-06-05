@@ -13,8 +13,10 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  Sparkles,
   SquarePen,
   UserCircle,
+  Zap,
 } from 'lucide-react'
 import {
   Responsive,
@@ -36,6 +38,7 @@ import './index.css'
 
 import { Toaster, toast } from 'react-hot-toast'
 import apiClient, { clearAccessToken, ensureWebSession, getAccessToken, setAccessToken } from './api/client'
+import { changeMyPassword } from './api/account'
 import {
   addOrganizationMember,
   fetchOrganizationMembers,
@@ -80,6 +83,13 @@ const LAYOUTS_STORAGE_KEY = 'eyeon-admin-layouts'
 const VISIBLE_STORAGE_KEY = 'eyeon-admin-visible-widgets'
 const NOTIFICATION_PAGE_SIZE = 50
 const MAX_ALERT_ITEMS = 500
+const SYSTEM_ADMIN_PATH = '/admin'
+
+function redirectToSystemAdmin() {
+  if (!window.location.pathname.startsWith(SYSTEM_ADMIN_PATH)) {
+    window.location.replace(SYSTEM_ADMIN_PATH)
+  }
+}
 
 function serializeLayouts(layouts: ResponsiveLayouts) {
   return JSON.stringify(layouts)
@@ -136,9 +146,12 @@ function UserDetailModal({ userName, riskUsers: _riskUsers, alertItems, sessionR
   const [filterDays, setFilterDays] = useState<number | null>(7)
   
 
-  const filterByDate = (date: string) => { 
-    if (!filterDays) return true; 
-    return (new Date(todayStr).getTime() - new Date(date).getTime()) / 86400000 <= filterDays 
+  const filterByDate = (date: string) => {
+    if (!filterDays) return true
+    const today = parseDateLike(todayStr)
+    const target = parseDateLike(date)
+    if (!today || !target) return false
+    return (today.getTime() - target.getTime()) / 86400000 <= filterDays
   }
   
   const alerts = alertItems.filter(a => a.user === userName && filterByDate(a.date))
@@ -270,8 +283,41 @@ function toInputDateString(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+function parseDateLike(value: string | null | undefined) {
+  if (!value || typeof value !== 'string') {
+    return null
+  }
+
+  const normalized = value.trim()
+  if (!normalized) {
+    return null
+  }
+
+  const match = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/
+  )
+  if (match) {
+    const year = Number(match[1])
+    const month = Number(match[2])
+    const day = Number(match[3])
+    const hour = Number(match[4] ?? '0')
+    const minute = Number(match[5] ?? '0')
+    const second = Number(match[6] ?? '0')
+    return new Date(year, month - 1, day, hour, minute, second)
+  }
+
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+  return parsed
+}
+
 function formatHourLabel(dateTime: string) {
-  const date = new Date(dateTime)
+  const date = parseDateLike(dateTime)
+  if (!date) {
+    return '-'
+  }
   return `${String(date.getHours()).padStart(2, '0')}:00`
 }
 
@@ -280,8 +326,31 @@ function formatBucketLabel(
   bucketEnd: string,
   statType: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 ) {
-  const start = new Date(bucketStart)
-  const end = new Date(bucketEnd)
+  const start = parseDateLike(bucketStart)
+  const end = parseDateLike(bucketEnd)
+  if (!start || !end) {
+    return '-'
+  }
+
+  if (statType === 'hourly') {
+    return `${start.getMonth() + 1}/${start.getDate()} ${String(start.getHours()).padStart(2, '0')}:00`
+  }
+  if (statType === 'daily') {
+    return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+  }
+  return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}~${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+}
+
+function formatBucketTickLabel(
+  bucketStart: string,
+  bucketEnd: string,
+  statType: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+) {
+  const start = parseDateLike(bucketStart)
+  const end = parseDateLike(bucketEnd)
+  if (!start || !end) {
+    return '-'
+  }
 
   if (statType === 'hourly') {
     return `${start.getMonth() + 1}/${start.getDate()} ${String(start.getHours()).padStart(2, '0')}:00`
@@ -289,13 +358,7 @@ function formatBucketLabel(
   if (statType === 'daily') {
     return `${start.getMonth() + 1}/${start.getDate()}`
   }
-  if (statType === 'weekly') {
-    return `${start.getMonth() + 1}/${start.getDate()}~${end.getMonth() + 1}/${end.getDate()}`
-  }
-  if (statType === 'monthly') {
-    return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
-  }
-  return `${start.getFullYear()}`
+  return `${start.getMonth() + 1}/${start.getDate()}~${end.getMonth() + 1}/${end.getDate()}`
 }
 
 function formatMemberRole(role: string | null | undefined) {
@@ -309,27 +372,24 @@ function formatMemberRole(role: string | null | undefined) {
 }
 
 function formatMemberCreatedAt(createdAt: string | null | undefined) {
-  if (!createdAt) {
-    return '-'
-  }
-  const parsed = new Date(createdAt)
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseDateLike(createdAt)
+  if (!parsed) {
     return '-'
   }
   return parsed.toLocaleString('ko-KR')
 }
 
 function formatSessionDate(dateTime: string) {
-  const parsed = new Date(dateTime)
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseDateLike(dateTime)
+  if (!parsed) {
     return '-'
   }
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
 }
 
 function formatSessionTime(dateTime: string) {
-  const parsed = new Date(dateTime)
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseDateLike(dateTime)
+  if (!parsed) {
     return '-'
   }
   return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
@@ -360,7 +420,7 @@ function mapRiskUsersResponseToWidgetRows(response: OrganizationRiskUserResponse
       name: resolvedName,
       alertCount: row.totalRiskCount,
       sessionsToday: row.totalSessionCount,
-      isOnline: true,
+      isOnline: row.isMonitoringActive,
     }
   })
 }
@@ -401,12 +461,14 @@ function mapNotificationToAlertItem(
 
 function getAlertTimestamp(item: AlertItem): number {
   if (item.occurredAt) {
-    const occurredAtTime = new Date(item.occurredAt).getTime()
+    const occurredAtDate = parseDateLike(item.occurredAt)
+    const occurredAtTime = occurredAtDate ? occurredAtDate.getTime() : Number.NaN
     if (!Number.isNaN(occurredAtTime)) {
       return occurredAtTime
     }
   }
-  const fallbackTime = new Date(`${item.date}T${item.time}:00`).getTime()
+  const fallbackDate = parseDateLike(`${item.date}T${item.time}:00`)
+  const fallbackTime = fallbackDate ? fallbackDate.getTime() : Number.NaN
   return Number.isNaN(fallbackTime) ? 0 : fallbackTime
 }
 
@@ -443,29 +505,50 @@ function applyRealtimeNotification(previous: AlertItem[], notification: Monitori
   return mergeAlertItems(closedPrevious, [nextAlert])
 }
 
+import { getCurrentSubscription } from './api/subscription'
+import type { SubscriptionInfo } from './types/subscription'
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAuthInitializing, setIsAuthInitializing] = useState(true)
-  const [isLoginMode, setIsLoginMode] = useState(true)
   const [operatorCode, setOperatorCode] = useState('')
   const [password, setPassword] = useState('')
 
-  const [signupEmail, setSignupEmail] = useState('')
-  const [signupPassword, setSignupPassword] = useState('')
-  const [signupOrgCode, setSignupOrgCode] = useState('')
+  const [accountCurrentPassword, setAccountCurrentPassword] = useState('')
+  const [accountNewPassword, setAccountNewPassword] = useState('')
+  const [accountNewPasswordConfirm, setAccountNewPasswordConfirm] = useState('')
+  const [accountOrganizationCode, setAccountOrganizationCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isRegistering, setIsRegistering] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
 
   useEffect(() => {
     let isMounted = true
 
     const restoreWebSession = async () => {
-      const hasValidSession = await ensureWebSession()
+      const session = await ensureWebSession()
       if (!isMounted) {
         return
       }
+
+      if (session?.role === 'SYSTEM_ADMIN') {
+        redirectToSystemAdmin()
+        return
+      }
+
+      const hasValidSession = Boolean(session)
       setIsLoggedIn(hasValidSession)
       setIsAuthInitializing(false)
+      
+      // Fetch subscription if logged in
+      if (hasValidSession) {
+        try {
+          const subData = await getCurrentSubscription()
+          setSubscription(subData)
+        } catch (error) {
+          console.error('Failed to fetch subscription:', error)
+        }
+      }
     }
 
     restoreWebSession()
@@ -539,6 +622,11 @@ export default function App() {
         password: password
       })
       setAccessToken(response.data.accessToken)
+      if (response.data.role === 'SYSTEM_ADMIN') {
+        toast.success('시스템 관리자 페이지로 이동합니다.')
+        redirectToSystemAdmin()
+        return
+      }
       toast.success('로그인에 성공했습니다!')
       setIsLoggedIn(true)
     } catch (error: unknown) {
@@ -547,40 +635,6 @@ export default function App() {
       toast.error(errorMsg)
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsRegistering(true)
-    try {
-      await apiClient.post('/api/auth/signup', {
-        email: signupEmail,
-        password: signupPassword,
-        organizationCode: signupOrgCode,
-        name: '새로운 구성원',
-        nickname: signupEmail.split('@')[0],
-        age: 25,
-        gender: 'MALE'
-      })
-      
-      toast.success('회원가입이 완료되었습니다! 로그인해 주세요.')
-      setIsLoginMode(true)
-      setSignupEmail('')
-      setSignupPassword('')
-      setSignupOrgCode('')
-      setOperatorCode(signupEmail) 
-      setPassword('')
-    } catch (error: any) {
-      console.error('Register error:', error)
-      const errorMsg = error.response?.data?.message || '회원가입에 실패했습니다. 입력 정보를 확인해 주세요.'
-      if (error.response?.status === 409) {
-        toast.error('이미 존재하는 이메일 또는 조직 코드 오류입니다.')
-      } else {
-        toast.error(errorMsg)
-      }
-    } finally {
-      setIsRegistering(false)
     }
   }
 
@@ -594,6 +648,33 @@ export default function App() {
     } finally {
       clearAccessToken()
       setIsLoggedIn(false)
+    }
+  }
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (accountNewPassword !== accountNewPasswordConfirm) {
+      toast.error('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.')
+      return
+    }
+
+    setIsChangingPassword(true)
+    try {
+      await changeMyPassword({
+        currentPassword: accountCurrentPassword,
+        newPassword: accountNewPassword,
+        organizationCode: accountOrganizationCode.trim(),
+      })
+      toast.success('비밀번호가 변경되었습니다.')
+      setAccountCurrentPassword('')
+      setAccountNewPassword('')
+      setAccountNewPasswordConfirm('')
+      setAccountOrganizationCode('')
+    } catch (error: unknown) {
+      toast.error(extractApiErrorMessage(error, '비밀번호 변경에 실패했습니다.'))
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -636,7 +717,13 @@ export default function App() {
   const [alertFilterLevel, setAlertFilterLevel] = useState<'all' | 'L1' | 'L2'>('all')
 
   const [realtimeSummary, setRealtimeSummary] = useState<RealtimeSummaryResponse | null>(null)
+  const realtimeSummaryRef = useRef<RealtimeSummaryResponse | null>(null)
+  const isRealtimeRiskUsersSyncInFlightRef = useRef(false)
   const isRealtimeTab = activeTab === 'dashboard' || activeTab === 'live' || activeTab === 'alerts'
+
+  useEffect(() => {
+    realtimeSummaryRef.current = realtimeSummary
+  }, [realtimeSummary])
 
   useEffect(() => {
     if (!isLoggedIn || !isRealtimeTab) {
@@ -672,11 +759,46 @@ export default function App() {
             accessToken,
             signal: abortController.signal,
             onSummary: (summary) => {
-              if (!isCancelled) {
-                setRealtimeSummary((previous) => (
-                  isRealtimeSummaryEqual(previous, summary) ? previous : summary
-                ))
+              if (isCancelled) {
+                return
               }
+
+              const previousSummary = realtimeSummaryRef.current
+              if (isRealtimeSummaryEqual(previousSummary, summary)) {
+                return
+              }
+
+              setRealtimeSummary(summary)
+              realtimeSummaryRef.current = summary
+
+              const activeSessionCountChanged =
+                previousSummary === null
+                || previousSummary.activeSessionCount !== summary.activeSessionCount
+
+              if (
+                !activeSessionCountChanged
+                || activeTab !== 'live'
+                || !organizationId
+                || isRealtimeRiskUsersSyncInFlightRef.current
+              ) {
+                return
+              }
+
+              isRealtimeRiskUsersSyncInFlightRef.current = true
+              void fetchOrganizationRiskUsers(organizationId)
+                .then((response) => {
+                  if (!isCancelled) {
+                    setRiskUsersState(mapRiskUsersResponseToWidgetRows(response))
+                  }
+                })
+                .catch((error: unknown) => {
+                  if (!isCancelled) {
+                    console.error('Failed to sync realtime monitoring list:', error)
+                  }
+                })
+                .finally(() => {
+                  isRealtimeRiskUsersSyncInFlightRef.current = false
+                })
             },
             onAlert: (notification) => {
               if (isCancelled) {
@@ -724,7 +846,7 @@ export default function App() {
       abortController?.abort()
       window.removeEventListener('pagehide', handlePageHide)
     }
-  }, [isLoggedIn, isRealtimeTab])
+  }, [isLoggedIn, isRealtimeTab, activeTab, organizationId])
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -1042,7 +1164,7 @@ export default function App() {
   }, [isLoggedIn, activeTab, organizationId, statType, statStartDate, statEndDate])
 
   useEffect(() => {
-    if (!isLoggedIn || activeTab !== 'members') {
+    if (!isLoggedIn || (activeTab !== 'members' && activeTab !== 'account')) {
       return
     }
 
@@ -1093,6 +1215,7 @@ export default function App() {
 
   const analysisChartData = analysisSeries.map((row) => ({
     xKey: row.bucketStart,
+    axisLabel: formatBucketTickLabel(row.bucketStart, row.bucketEnd, statType),
     label: formatBucketLabel(row.bucketStart, row.bucketEnd, statType),
     l1: row.drowsyCount,
     l2: row.sleepCount,
@@ -1147,9 +1270,16 @@ export default function App() {
   const activeL1AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L1').length
   const activeL2AlertCount = activeRealtimeAlerts.filter((item) => item.level === 'L2').length
   const filteredAlertItems = alertItems.filter((item) => {
-    const occurredAt = new Date(item.date).getTime()
-    const start = new Date(alertFilterStartDate).getTime()
-    const end = new Date(alertFilterEndDate).getTime()
+    const occurredAtDate = parseDateLike(item.date)
+    const startDate = parseDateLike(alertFilterStartDate)
+    const endDate = parseDateLike(alertFilterEndDate)
+    if (!occurredAtDate || !startDate || !endDate) {
+      return false
+    }
+
+    const occurredAt = occurredAtDate.getTime()
+    const start = startDate.getTime()
+    const end = endDate.getTime()
 
     if (Number.isNaN(occurredAt) || occurredAt < start || occurredAt > end) {
       return false
@@ -1227,36 +1357,21 @@ export default function App() {
           <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Secure Access Portal</p>
           
           <div className="flex w-full bg-slate-100 rounded-xl p-1 mb-8 mt-6">
-            <button type="button" onClick={() => setIsLoginMode(true)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>로그인</button>
-            <button type="button" onClick={() => setIsLoginMode(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLoginMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>회원가입</button>
+            <button type="button" className="flex-1 py-2 text-sm font-bold rounded-lg transition-all bg-white text-slate-900 shadow-sm">로그인</button>
+            <button type="button" onClick={() => window.location.href = '/signup'} className="flex-1 py-2 text-sm font-bold rounded-lg transition-all text-slate-500 hover:text-slate-900">회원가입</button>
           </div>
           
-          {isLoginMode ? (
-            <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
-              <input type="email" placeholder="이메일" value={operatorCode || ''} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="password" placeholder="비밀번호" value={password || ''} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <button 
-                type="submit" 
-                disabled={isLoading}
-                className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-all disabled:bg-slate-300"
-              >
-                {isLoading ? '연결 중...' : '로그인'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleRegister} className="w-full flex flex-col gap-4">
-              <input type="text" placeholder="조직 코드 (예: ORG001)" value={signupOrgCode || ''} onChange={e => setSignupOrgCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="email" placeholder="사용할 이메일" value={signupEmail || ''} onChange={e => setSignupEmail(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
-              <input type="password" placeholder="사용할 비밀번호 (4자 이상)" value={signupPassword || ''} onChange={e => setSignupPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" minLength={4} required />
-              <button 
-                type="submit" 
-                disabled={isRegistering}
-                className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-all disabled:bg-slate-500"
-              >
-                {isRegistering ? '가입 처리 중...' : '회원가입'}
-              </button>
-            </form>
-          )}
+          <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
+            <input type="email" placeholder="이메일" value={operatorCode || ''} onChange={e => setOperatorCode(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+            <input type="password" placeholder="비밀번호" value={password || ''} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-blue-500 transition-colors" required />
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full py-3 mt-2 rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 hover:-translate-y-0.5 transition-all disabled:bg-slate-300"
+            >
+              {isLoading ? '연결 중...' : '로그인'}
+            </button>
+          </form>
         </div>
       </div>
     )
@@ -1290,7 +1405,23 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="mt-auto">
+        <div className="mt-auto flex flex-col gap-4">
+          {subscription && (
+            <div className={`mx-4 px-3 py-2 rounded-xl border flex items-center justify-between shadow-sm ${
+              subscription.plan === 'PRO' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
+              subscription.plan === 'PLUS' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+              'bg-slate-500/10 border-slate-500/20 text-slate-400'
+            }`}>
+              <div className="flex items-center gap-2">
+                {subscription.plan === 'PRO' ? <Zap size={14} className="fill-purple-400" /> : 
+                 subscription.plan === 'PLUS' ? <Sparkles size={14} /> : 
+                 <ShieldAlert size={14} />}
+                <span className="text-[10px] font-black uppercase tracking-wider">{subscription.plan} Plan</span>
+              </div>
+              <span className="text-[10px] font-bold opacity-60">Active</span>
+            </div>
+          )}
+
           <button onClick={() => setActiveTab('account')} className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-medium text-left border border-slate-800 ${activeTab === 'account' ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-900 hover:bg-white/5 hover:text-slate-100'}`}>
             <div className="grid w-8 h-8 place-items-center rounded-lg bg-slate-800 text-slate-300">
               <UserCircle size={18} />
@@ -1903,7 +2034,7 @@ export default function App() {
                               tickLine={false}
                               tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
                               dy={10}
-                              tickFormatter={(_value, index) => analysisChartData[index]?.label ?? ''}
+                              tickFormatter={(_value, index) => analysisChartData[index]?.axisLabel ?? ''}
                             />
                             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} />
                             <Tooltip
@@ -1994,33 +2125,128 @@ export default function App() {
               <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 m-0 mb-1">계정 설정</h1>
             </header>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <div className="flex flex-col gap-6">
+                {/* Subscription Management Section */}
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm flex flex-col">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-black text-slate-900 m-0">구독 관리</h3>
+                  {subscription && (
+                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                      subscription.plan === 'PRO' ? 'bg-purple-100 text-purple-700' :
+                      subscription.plan === 'PLUS' ? 'bg-blue-100 text-blue-700' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {subscription.plan}
+                    </span>
+                  )}
+                </div>
+                
+                <div className="space-y-4 mb-8">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">조직원 사용량</span>
+                    <strong className="text-slate-900">{organizationMembers.length} / {subscription?.membersLimit ?? '-'}명</strong>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">데이터 열람 기간</span>
+                    <strong className="text-slate-900">{subscription?.retentionPeriod ?? '-'}</strong>
+                  </div>
+                  {subscription?.plan !== 'FREE' && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 font-medium">다음 결제 일</span>
+                      <strong className="text-slate-900">2026. 06. 28</strong>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">상태</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
+                      <Check size={14} strokeWidth={3} /> 활성 상태
+                    </span>
+                  </div>
+                </div>
+
+                <button 
+                  type="button" 
+                  onClick={() => window.location.href = '/subscription'}
+                  className="w-full py-4 rounded-xl bg-blue-600 text-white font-black text-sm hover:bg-blue-700 transition-all shadow-md shadow-blue-600/20 flex items-center justify-center gap-2"
+                >
+                  <Sparkles size={16} /> 구독 플랜 변경 및 관리
+                </button>
+              </div>
+
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                  <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
+                  <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
+                  <button type="button" onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
+                    <LogOut size={18} /> 안전하게 로그아웃
+                  </button>
+                </div>
+              </div>
+
               <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
                 <h3 className="text-lg font-black text-slate-900 mb-6">비밀번호 변경</h3>
-                <form onSubmit={e => { e.preventDefault(); alert('비밀번호가 변경되었습니다.'); }} className="flex flex-col gap-4">
+                <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">현재 비밀번호</label>
+                    <input
+                      type="password"
+                      placeholder="현재 비밀번호를 입력하세요"
+                      value={accountCurrentPassword}
+                      onChange={e => setAccountCurrentPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      minLength={4}
+                      maxLength={72}
+                      required
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">새 비밀번호</label>
-                    <input type="password" placeholder="새로운 비밀번호를 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                    <input
+                      type="password"
+                      placeholder="새로운 비밀번호를 입력하세요"
+                      value={accountNewPassword}
+                      onChange={e => setAccountNewPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      minLength={4}
+                      maxLength={72}
+                      required
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">비밀번호 확인</label>
-                    <input type="password" placeholder="다시 한번 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                    <input
+                      type="password"
+                      placeholder="다시 한번 입력하세요"
+                      value={accountNewPasswordConfirm}
+                      onChange={e => setAccountNewPasswordConfirm(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      minLength={4}
+                      maxLength={72}
+                      required
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">조직 코드</label>
-                    <input type="text" placeholder="인증을 위한 조직 코드를 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm" required />
+                    <input
+                      type="text"
+                      placeholder="인증을 위한 조직 코드를 입력하세요"
+                      value={accountOrganizationCode}
+                      onChange={e => setAccountOrganizationCode(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors text-sm"
+                      maxLength={100}
+                      required
+                    />
                   </div>
-                  <button type="submit" className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform">변경 사항 저장</button>
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword}
+                    className="w-full py-3 mt-2 rounded-xl bg-slate-900 text-white font-bold shadow-md hover:-translate-y-0.5 transition-transform disabled:bg-slate-400 disabled:hover:translate-y-0"
+                  >
+                    {isChangingPassword ? '변경 중...' : '변경 사항 저장'}
+                  </button>
                 </form>
               </div>
 
-              <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit">
-                <h3 className="text-lg font-black text-red-600 mb-6">시스템 로그아웃</h3>
-                <p className="text-sm text-slate-500 mb-6">보안을 위해 사용이 끝나면 로그아웃 해주세요.</p>
-                <button type="button" onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 border border-red-200 font-bold hover:bg-red-100 transition-colors">
-                  <LogOut size={18} /> 안전하게 로그아웃
-                </button>
-              </div>
             </div>
           </div>
         )}
