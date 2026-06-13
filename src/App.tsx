@@ -1378,15 +1378,15 @@ export default function App() {
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] min-h-screen bg-slate-50">
+    <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)] min-h-screen bg-slate-50">
       <Toaster position="top-right" />
       {/* Sidebar - Dark Figma Theme */}
-      <aside className="sticky top-0 flex flex-col h-screen p-6 bg-slate-950 text-slate-300 border-r border-slate-800 z-10 overflow-y-auto">
+      <aside className="flex flex-col h-auto md:sticky md:top-0 md:h-screen p-4 xl:p-6 bg-slate-950 text-slate-300 border-b md:border-b-0 md:border-r border-slate-800 z-10 overflow-y-auto">
         <div className="flex items-center gap-3 pb-6 mb-2 border-b border-slate-800">
-          <div className="grid w-10 h-10 place-items-center rounded-xl bg-blue-600 text-white shadow-[0_4px_10px_rgba(37,99,235,0.3)]">
+          <div className="grid w-10 h-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white shadow-[0_4px_10px_rgba(37,99,235,0.3)]">
             <ShieldAlert size={22} />
           </div>
-          <div>
+          <div className="min-w-0">
             <strong className="block text-xl font-bold text-slate-100 leading-none">Eye:on</strong>
             <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mt-1">Admin Portal</span>
           </div>
@@ -1399,8 +1399,8 @@ export default function App() {
               onClick={() => setActiveTab(item.id)}
               className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-medium text-left ${activeTab === item.id ? 'bg-blue-500/15 text-blue-400 font-bold' : 'hover:bg-white/5 hover:text-slate-100'}`}
             >
-              <item.icon size={20} strokeWidth={activeTab === item.id ? 2.5 : 2} />
-              {item.label}
+              <item.icon size={20} className="shrink-0" strokeWidth={activeTab === item.id ? 2.5 : 2} />
+              <span className="truncate">{item.label}</span>
             </button>
           ))}
         </nav>
@@ -1413,29 +1413,29 @@ export default function App() {
               'bg-slate-500/10 border-slate-500/20 text-slate-400'
             }`}>
               <div className="flex items-center gap-2">
-                {subscription.plan === 'PRO' ? <Zap size={14} className="fill-purple-400" /> : 
-                 subscription.plan === 'PLUS' ? <Sparkles size={14} /> : 
-                 <ShieldAlert size={14} />}
-                <span className="text-[10px] font-black uppercase tracking-wider">{subscription.plan} Plan</span>
+                {subscription.plan === 'PRO' ? <Zap size={14} className="shrink-0 fill-purple-400" /> : 
+                 subscription.plan === 'PLUS' ? <Sparkles size={14} className="shrink-0" /> : 
+                 <ShieldAlert size={14} className="shrink-0" />}
+                <span className="truncate text-[10px] font-black uppercase tracking-wider">{subscription.plan} Plan</span>
               </div>
               <span className="text-[10px] font-bold opacity-60">Active</span>
             </div>
           )}
 
           <button onClick={() => setActiveTab('account')} className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-medium text-left border border-slate-800 ${activeTab === 'account' ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-900 hover:bg-white/5 hover:text-slate-100'}`}>
-            <div className="grid w-8 h-8 place-items-center rounded-lg bg-slate-800 text-slate-300">
+            <div className="grid w-8 h-8 shrink-0 place-items-center rounded-lg bg-slate-800 text-slate-300">
               <UserCircle size={18} />
             </div>
-            <div>
-              <span className="block text-sm text-slate-100 font-bold leading-none">관리자</span>
-              <span className="text-xs text-slate-500">admin@eyeon.com</span>
+            <div className="min-w-0">
+              <span className="block text-sm text-slate-100 font-bold leading-none truncate">관리자</span>
+              <span className="block text-xs text-slate-500 truncate">admin@eyeon.com</span>
             </div>
           </button>
         </div>
       </aside>
 
       {/* Main Workspace - Light Figma Theme */}
-      <main className="p-4 md:p-8 overflow-y-auto text-slate-900 h-screen max-w-[1600px] mx-auto w-full">
+      <main className="min-w-0 p-4 md:p-6 xl:p-8 overflow-y-auto text-slate-900 min-h-screen md:h-screen max-w-[1600px] mx-auto w-full">
         {activeTab === 'dashboard' && (
           <>
             <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 p-6 bg-white border border-slate-100 rounded-2xl shadow-sm">
